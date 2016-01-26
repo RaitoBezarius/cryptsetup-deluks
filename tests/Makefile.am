@@ -1,5 +1,6 @@
 TESTS = api-test \
 	compat-test \
+	compat-test2 \
 	loopaes-test \
 	align-test \
 	discards-test \
@@ -31,12 +32,13 @@ EXTRA_DIST = compatimage.img.bz2 compatv10image.img.bz2 \
 	reencryption-compat-test \
 	tcrypt-compat-test \
 	luks1-compat-test \
+	luks2-validation-test \
 	device-test \
 	cryptsetup-valg-supps valg.sh valg-api.sh
 
 CLEANFILES = cryptsetup-tst* valglog*
 clean-local:
-	-rm -rf tcrypt-images luks1-images
+	-rm -rf tcrypt-images luks1-images luks2-images
 
 differ_SOURCES = differ.c
 differ_CFLAGS = $(AM_CFLAGS) -Wall -O2
