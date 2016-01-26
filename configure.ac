@@ -34,6 +34,8 @@ AC_ENABLE_STATIC(no)
 LT_INIT
 PKG_PROG_PKG_CONFIG
 
+AC_C_RESTRICT
+
 AC_HEADER_DIRENT
 AC_HEADER_STDC
 AC_CHECK_HEADERS(fcntl.h malloc.h inttypes.h sys/ioctl.h sys/mman.h \
@@ -299,6 +301,9 @@ if test "x$enable_udev" = xyes; then
 fi
 LIBS=$saved_LIBS
 
+dnl Check for JSON-C used in LUKS2
+PKG_CHECK_MODULES([JSON_C], [json-c])
+
 dnl Crypto backend configuration.
 AC_ARG_WITH([crypto_backend],
 	AS_HELP_STRING([--with-crypto_backend=BACKEND], [crypto backend (gcrypt/openssl/nss/kernel/nettle) [gcrypt]]),
@@ -377,6 +382,8 @@ AC_SUBST([PASSWDQC_LIBS])
 AC_SUBST([CRYPTO_CFLAGS])
 AC_SUBST([CRYPTO_LIBS])
 AC_SUBST([CRYPTO_STATIC_LIBS])
+
+AC_SUBST([JSON_C_LIBS])
 
 AC_SUBST([LIBCRYPTSETUP_VERSION])
 AC_SUBST([LIBCRYPTSETUP_VERSION_INFO])
@@ -465,6 +472,7 @@ lib/libcryptsetup.pc
 lib/crypto_backend/Makefile
 lib/crypto_backend/argon2/Makefile
 lib/luks1/Makefile
+lib/luks2/Makefile
 lib/loopaes/Makefile
 lib/verity/Makefile
 lib/tcrypt/Makefile

@@ -3,6 +3,7 @@ CRYPTSETUP_1.0 {
 		crypt_init;
 		crypt_init_by_name;
 		crypt_init_by_name_and_header;
+
 		crypt_set_log_callback;
 		crypt_set_confirm_callback;
 		crypt_set_iteration_time;
@@ -11,6 +12,7 @@ CRYPTSETUP_1.0 {
 
 		crypt_memory_lock;
 		crypt_format;
+		crypt_convert;
 		crypt_load;
 		crypt_repair;
 		crypt_resize;
@@ -26,6 +28,17 @@ CRYPTSETUP_1.0 {
 		crypt_keyslot_add_by_keyfile_offset;
 		crypt_keyslot_add_by_volume_key;
 		crypt_keyslot_destroy;
+
+		crypt_keyslot_create;
+		crypt_keyslot_assign_segment;
+		crypt_keyslot_unassign_segment;
+		crypt_keyslot_assign_digest;
+		crypt_keyslot_unassign_digest;
+		crypt_keyslot_set_priority;
+		crypt_keyslot_get_priority;
+
+		crypt_get_json;
+
 		crypt_activate_by_passphrase;
 		crypt_activate_by_keyfile;
 		crypt_activate_by_keyfile_offset;
@@ -39,6 +52,7 @@ CRYPTSETUP_1.0 {
 		crypt_benchmark_pbkdf;
 		crypt_get_cipher;
 		crypt_get_cipher_mode;
+		crypt_get_cipher_segment;
 		crypt_get_uuid;
 		crypt_get_data_offset;
 		crypt_get_iv_offset;
@@ -51,6 +65,8 @@ CRYPTSETUP_1.0 {
 
 		crypt_set_rng_type;
 		crypt_get_rng_type;
+		crypt_set_pbkdf_type;
+		crypt_get_pbkdf_type;
 
 		crypt_keyslot_max;
 		crypt_keyslot_area;

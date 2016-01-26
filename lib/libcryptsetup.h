@@ -270,6 +270,8 @@ int crypt_memory_lock(struct crypt_device *cd, int lock);
 #define CRYPT_PLAIN "PLAIN"
 /** LUKS version 1 header on-disk */
 #define CRYPT_LUKS1 "LUKS1"
+/** LUKS version 2 header on-disk */
+#define CRYPT_LUKS2 "LUKS2"
 /** loop-AES compatibility mode */
 #define CRYPT_LOOPAES "LOOPAES"
 /** dm-verity mode */
@@ -309,6 +311,21 @@ struct crypt_params_plain {
  */
 struct crypt_params_luks1 {
 	const char *hash; /**< hash used in LUKS header */
+	size_t data_alignment; /**< data alignment in sectors, data offset is multiple of this */
+	const char *data_device; /**< detached encrypted data device or @e NULL */
+};
+
+/**
+ * Structure used as parameter for LUKS2 device type.
+ *
+ * @see crypt_format, crypt_load
+ *
+ * @note during crypt_format @e data_device attribute determines
+ * 	 if the LUKS2 header is separated from encrypted payload device
+ *
+ */
+struct crypt_params_luks2 {
+	const struct crypt_pbkdf_type pbkdf; /**< PBKDF (and hash) parameters */
 	size_t data_alignment; /**< data alignment in sectors, data offset is multiple of this */
 	const char *data_device; /**< detached encrypted data device or @e NULL */
 };
@@ -418,6 +435,20 @@ int crypt_format(struct crypt_device *cd,
 	const char *volume_key,
 	size_t volume_key_size,
 	void *params);
+
+/**
+ * Convert to new type for already existing device.
+ *
+ * @param cd crypt device handle
+ * @param type type of device (optional params struct must be of this type)
+ *
+ * @returns 0 on success or negative errno value otherwise.
+ *
+ * @note Currently, only LUKS1->LUKS2 conversion is supported
+ */
+int crypt_convert(struct crypt_device *cd,
+		  const char *type,
+		  void *params);
 
 /**
  * Set new UUID for already existing device.
@@ -673,6 +704,14 @@ int crypt_keyslot_add_by_volume_key(struct crypt_device *cd,
  */
 int crypt_keyslot_destroy(struct crypt_device *cd, int keyslot);
 
+/**
+ * Create new LUKS2 keyslot.
+ */
+int crypt_keyslot_create(struct crypt_device *cd,
+	int keyslot,
+	const char *type,
+	const char *json);
+
 /** @} */
 
 /**
@@ -910,6 +949,17 @@ const char *crypt_get_cipher(struct crypt_device *cd);
 const char *crypt_get_cipher_mode(struct crypt_device *cd);
 
 /**
+ * Get cipher and mode used in device per segment, LUKS2 only.
+ *
+ * @param cd crypt device handle
+ * @param segment crypt segment
+ *
+ * @return used cipher and mode e.g. "aes-xts-plain64" or @e otherwise
+ *
+ */
+const char *crypt_get_cipher_segment(struct crypt_device *cd, int segment);
+
+/**
  * Get device UUID.
  *
  * @param cd crypt device handle
@@ -1061,7 +1111,37 @@ typedef enum {
  *
  */
 crypt_keyslot_info crypt_keyslot_status(struct crypt_device *cd, int keyslot);
-/** @} */
+
+/**
+ * Crypt keyslot priority
+ */
+typedef enum {
+	CRYPT_SLOT_PRIORITY_INVALID =-1, /**< no such slot */
+	CRYPT_SLOT_PRIORITY_IGNORE  = 0, /**< CRYPT_ANY_SLOT will ignore it for open */
+	CRYPT_SLOT_PRIORITY_NORMAL  = 1, /**< default priority, tried after preferred */
+	CRYPT_SLOT_PRIORITY_PREFER  = 2, /**< will try to open first */
+} crypt_keyslot_priority;
+
+/**
+ * Get keyslot priority (LUKS2)
+ *
+ * @param type crypt device type
+ * @param keyslot keyslot number
+ *
+ * @return value defined by crypt_keyslot_priority
+ */
+crypt_keyslot_priority crypt_keyslot_get_priority(struct crypt_device *cd, int keyslot);
+
+/**
+ * Set keyslot priority (LUKS2)
+ *
+ * @param type crypt device type
+ * @param keyslot keyslot number
+ * @param priority priority defined in crypt_keyslot_priority
+ *
+ * @return @e 0 on success or negative errno value otherwise.
+ */
+int crypt_keyslot_set_priority(struct crypt_device *cd, int keyslot, crypt_keyslot_priority priority);
 
 /**
  * Get number of keyslots supported for device type.
@@ -1088,6 +1168,8 @@ int crypt_keyslot_area(struct crypt_device *cd,
 	int keyslot,
 	uint64_t *offset,
 	uint64_t *length);
+/** @} */
+
 
 /**
  * Backup header and keyslots to file.
@@ -1150,6 +1232,16 @@ void crypt_set_debug_level(int level);
 /** @} */
 
 /**
+ * @defgroup keyfiles Keyfile utilities
+ *
+ * Utilities to handle keyfiles
+ *
+ * @addtogroup keyfiles
+ * @{
+ *
+ */
+
+/**
  * Read keyfile
  *
  */
@@ -1162,6 +1254,81 @@ int crypt_keyfile_read(struct crypt_device *cd,
 );
 /** No on-disk header (only hashes) */
 #define CRYPT_KEYFILE_STOP_EOL   (1 << 0)
+
+/** @} */
+
+/**
+ * @defgroup handlers Keyslot and digest handlers
+ *
+ * Utilities to register and assign keyslots and digests for LUKS2
+ *
+ * @addtogroup handlers
+ * @{
+ *
+ */
+typedef enum {
+	CRYPT_JSON_KEYSLOT,
+	CRYPT_JSON_SEGMENT,
+	CRYPT_JSON_AREA,
+	CRYPT_JSON_DIGEST,
+	CRYPT_JSON_CONFIG
+} crypt_json_metadata;
+
+int crypt_get_json(struct crypt_device *cd, crypt_json_metadata json_metadata,
+		   int id, const char **json);
+
+/**
+ * LUKS2 keyslots handlers (EXPERIMENTAL)
+ */
+typedef int (*keyslot_open_func) (struct crypt_device *cd, int keyslot,
+				  const char *password, size_t password_len,
+				  char *volume_key, size_t volume_key_len);
+typedef int (*keyslot_store_func)(struct crypt_device *cd, int keyslot,
+				  const char *password, size_t password_len,
+				  const char *volume_key, size_t volume_key_len);
+typedef int (*keyslot_wipe_func) (struct crypt_device *cd, int keyslot);
+typedef int (*keyslot_dump_func) (struct crypt_device *cd, int keyslot);
+typedef int (*keyslot_validate_func) (struct crypt_device *cd, int keyslot);
+
+typedef struct  {
+	const char *name;
+	keyslot_open_func  open;
+	keyslot_store_func store;
+	keyslot_wipe_func  wipe;
+	keyslot_dump_func  dump;
+	keyslot_validate_func validate;
+} keyslot_handler;
+
+int crypt_keyslot_register(const keyslot_handler *handler);
+
+#define CRYPT_ANY_SEGMENT -1
+int crypt_keyslot_assign_segment(struct crypt_device *cd, int keyslot, int segment);
+int crypt_keyslot_unassign_segment(struct crypt_device *cd, int keyslot, int segment);
+
+/**
+ * LUKS2 digest handlers (EXPERIMENTAL)
+ */
+typedef int (*digest_verify_func)(struct crypt_device *cd, int digest,
+				  const char *volume_key, size_t volume_key_len);
+typedef int (*digest_store_func) (struct crypt_device *cd, int digest,
+				  const char *volume_key, size_t volume_key_len);
+typedef int (*digest_dump_func)  (struct crypt_device *cd, int digest);
+
+typedef struct  {
+	const char *name;
+	digest_verify_func verify;
+	digest_store_func  store;
+	digest_dump_func   dump;
+} digest_handler;
+
+int crypt_digest_register(const digest_handler *handler);
+const digest_handler *LUKS2_digest_handler_type(struct crypt_device *cd, const char *type);
+
+#define CRYPT_ANY_DIGEST -1
+int crypt_keyslot_assign_digest(struct crypt_device *cd, int keyslot, int digest);
+int crypt_keyslot_unassign_digest(struct crypt_device *cd, int keyslot, int digest);
+
+/** @} */
 
 #ifdef __cplusplus
 }
