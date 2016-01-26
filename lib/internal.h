@@ -48,8 +48,8 @@
 #define DEFAULT_MEM_ALIGNMENT	4096
 #define MAX_ERROR_LENGTH	512
 
-#define MAX_PBKDF_THREADS      8
-#define MAX_PBKDF_MEMORY       1024*1024 /* 1GiB */
+#define MAX_PBKDF_THREADS	8
+#define MAX_PBKDF_MEMORY	1024*1024 /* 1GiB */
 
 #define at_least(a, b) ({ __typeof__(a) __at_least = (a); (__at_least >= (b))?__at_least:(b); })
 
@@ -138,6 +138,8 @@ int PLAIN_activate(struct crypt_device *cd,
 		     uint64_t size,
 		     uint32_t flags);
 
+void *crypt_get_hdr(struct crypt_device *cd, const char *type);
+
 /**
  * Different methods used to erase sensitive data concerning
  * either encrypted payload area or master key inside keyslot
@@ -153,8 +155,9 @@ typedef enum {
 
 int crypt_wipe(struct device *device,
 	       uint64_t offset,
-	       uint64_t sectors,
+	       uint64_t size,
 	       crypt_wipe_type type,
-	       int flags);
+	       int exclusive);
+
 
 #endif /* INTERNAL_H */
