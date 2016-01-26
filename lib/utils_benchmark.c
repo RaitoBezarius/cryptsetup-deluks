@@ -231,16 +231,16 @@ out:
 	return r;
 }
 
-int crypt_benchmark_kdf(struct crypt_device *cd,
-	const char *kdf,
-	const char *hash,
+int crypt_benchmark_pbkdf(struct crypt_device *cd,
+	const struct crypt_pbkdf_type *pbkdf,
 	const char *password,
 	size_t password_size,
 	const char *salt,
 	size_t salt_size,
-	uint64_t *iterations_sec)
+	size_t volume_key_size,
+	uint32_t *iterations_sec)
 {
-	int r, key_length = 0;
+	int r;
 
 	if (!iterations_sec)
 		return -EINVAL;
@@ -249,21 +249,21 @@ int crypt_benchmark_kdf(struct crypt_device *cd,
 	if (r < 0)
 		return r;
 
-	// FIXME: this should be in KDF check API parameters later
-	if (cd)
-		key_length = crypt_get_volume_key_size(cd);
-
-	if (key_length == 0)
-		key_length = DEFAULT_LUKS1_KEYBITS / 8;
-
-	if (!strncmp(kdf, "pbkdf2", 6))
-		r = crypt_pbkdf_check(kdf, hash, password, password_size,
-				      salt, salt_size, key_length, iterations_sec);
-	else
+	if (!strcmp(pbkdf->type, "pbkdf2")) {
+		r = crypt_pbkdf_check(pbkdf->type, pbkdf->hash, password, password_size,
+				      salt, salt_size, volume_key_size, iterations_sec);
+		if (!r)
+			log_dbg("PBKDF2 benchmark, hash %s: %u iterations per second (%zu-bits key).",
+				pbkdf->hash, *iterations_sec, volume_key_size * 8);
+	} else if (!strcmp(pbkdf->type, "argon2")) {
+		r = crypt_argon2_check(password, password_size, salt, salt_size,
+				       volume_key_size, pbkdf->memory_kb, pbkdf->parallel_threads,
+				       pbkdf->time_ms, iterations_sec);
+		if (!r)
+			log_dbg("Argon2 benchmark: %u iterations per second (%zu-bits key).",
+				*iterations_sec, volume_key_size * 8);
+	} else
 		r = -EINVAL;
 
-	if (!r)
-		log_dbg("KDF %s, hash %s: %" PRIu64 " iterations per second (%d-bits key).",
-			kdf, hash, *iterations_sec, key_length * 8);
 	return r;
 }

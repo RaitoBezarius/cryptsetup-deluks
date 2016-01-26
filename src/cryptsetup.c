@@ -482,17 +482,21 @@ out:
 	return r;
 }
 
-static int action_benchmark_kdf(const char *hash)
+static int action_benchmark_kdf(const char *hash, size_t key_size)
 {
-	uint64_t kdf_iters;
+	const struct crypt_pbkdf_type pbkdf = {
+		.type = "pbkdf2",
+		.hash = hash,
+	};
+	uint32_t kdf_iters;
 	int r;
 
-	r = crypt_benchmark_kdf(NULL, "pbkdf2", hash, "foo", 3, "bar", 3,
-				&kdf_iters);
+	r = crypt_benchmark_pbkdf(NULL, &pbkdf, "foo", 3, "bar", 3, key_size, &kdf_iters);
+
 	if (r < 0)
 		log_std("PBKDF2-%-9s     N/A\n", hash);
 	else
-		log_std("PBKDF2-%-9s %7" PRIu64 " iterations per second for %d-bit key\n",
+		log_std("PBKDF2-%-9s %7u iterations per second for %d-bit key\n",
 			hash, kdf_iters, DEFAULT_LUKS1_KEYBITS);
 	return r;
 }
@@ -547,14 +551,14 @@ static int action_benchmark(void)
 	};
 	char cipher[MAX_CIPHER_LEN], cipher_mode[MAX_CIPHER_LEN];
 	double enc_mbr = 0, dec_mbr = 0;
-	int key_size = (opt_key_size ?: DEFAULT_PLAIN_KEYBITS);
+	int key_size = (opt_key_size ?: DEFAULT_PLAIN_KEYBITS) / 8;
 	int iv_size = 16, skipped = 0;
 	char *c;
 	int i, r;
 
 	log_std(_("# Tests are approximate using memory only (no storage IO).\n"));
 	if (opt_hash) {
-		r = action_benchmark_kdf(opt_hash);
+		r = action_benchmark_kdf(opt_hash, key_size);
 	} else if (opt_cipher) {
 		r = crypt_parse_name_and_mode(opt_cipher, cipher, NULL, cipher_mode);
 		if (r < 0) {
@@ -574,7 +578,7 @@ static int action_benchmark(void)
 			iv_size = 0;
 
 		r = benchmark_cipher_loop(cipher, cipher_mode,
-					  key_size / 8, iv_size,
+					  key_size, iv_size,
 					  &enc_mbr, &dec_mbr);
 		if (!r) {
 			log_std(N_("#  Algorithm | Key |  Encryption |  Decryption\n"));
@@ -584,7 +588,7 @@ static int action_benchmark(void)
 			log_err(_("Cipher %s is not available.\n"), opt_cipher);
 	} else {
 		for (i = 0; bkdfs[i]; i++) {
-			r = action_benchmark_kdf(bkdfs[i]);
+			r = action_benchmark_kdf(bkdfs[i], key_size);
 			check_signal(&r);
 			if (r == -EINTR)
 				break;
