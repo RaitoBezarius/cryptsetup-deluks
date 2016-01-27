@@ -670,7 +670,7 @@ void LUKS2_hdr_free(struct luks2_hdr *hdr)
 static uint64_t LUKS2_area_max_offset(struct luks2_hdr *hdr)
 {
 	json_object *jobj1, *jobj2;
-	uint64_t max_offset = 0, length, offset;
+	uint64_t max_offset = 0, length = 0, offset = 0;
 
 	json_object_object_get_ex(hdr->jobj, "areas", &jobj1);
 
@@ -792,7 +792,7 @@ int LUKS2_hdr_restore(struct crypt_device *cd, struct luks2_hdr *hdr,
 	r = LUKS2_hdr_read(cd, hdr);
 	if (r == 0) {
 		log_dbg("Device %s already contains LUKS header, checking UUID and offset.", device_path(device));
-		if(buffer_size != LUKS2_area_max_offset(hdr)) {
+		if(buffer_size != (ssize_t)LUKS2_area_max_offset(hdr)) {
 			log_err(cd, _("Data offset differ on device and backup, restore failed.\n"));
 			crypt_safe_free(buffer);
 			return -EINVAL;
@@ -850,10 +850,10 @@ static const char *get_priority_desc(json_object *jobj)
 {
 	crypt_keyslot_priority priority;
 	json_object *jobj_priority;
-	char *text;
+	const char *text;
 
 	if (json_object_object_get_ex(jobj, "priority", &jobj_priority))
-		priority = (crypt_keyslot_priority) json_object_get_int(jobj_priority);
+		priority = (crypt_keyslot_priority)(int)json_object_get_int(jobj_priority);
 	else
 		priority = CRYPT_SLOT_PRIORITY_NORMAL;
 
@@ -872,7 +872,7 @@ static void hdr_dump_keyslots(struct crypt_device *cd, json_object *hdr_jobj)
 	json_object *keyslots_jobj, *areas_jobj, *digests_jobj, *jobj2, *jobj3, *jobj4;
 	const char *tmps;
 	int i;
-	uint64_t value;
+	uint64_t value = 0;
 
 	log_std(cd, "Keyslots:\n");
 	json_object_object_get_ex(hdr_jobj, "keyslots", &keyslots_jobj);

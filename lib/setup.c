@@ -687,8 +687,6 @@ static int _init_by_name_crypt(struct crypt_device *cd, const char *name)
 			DM_ACTIVE_CRYPT_KEYSIZE, &dmd);
 	if (r < 0)
 		goto out;
-	if (r > 0)
-		r = 0;
 
 	r = crypt_parse_name_and_mode(dmd.u.crypt.cipher, cipher,
 				      &key_nums, cipher_mode);

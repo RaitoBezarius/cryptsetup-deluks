@@ -29,7 +29,7 @@ static const char *uint64_to_str(char *buffer, size_t size, uint64_t *val)
 	if (r < 0) {
 		log_dbg("Failed to convert integer to string.");
 		*buffer = '\0';
-	} else if (r >= size) {
+	} else if ((size_t)r >= size) {
 		log_dbg("Not enough space to store '%" PRIu64 "' to a string buffer.", *val);
 		*buffer = '\0';
 	}
@@ -555,7 +555,7 @@ static void move_keyslot_offset(json_object *jobj, int offset_add)
 {
 	char num[24];
 	json_object *jobj1, *jobj2;
-	uint64_t offset;
+	uint64_t offset = 0;
 
 	json_object_object_get_ex(jobj, "areas", &jobj1);
 	json_object_object_foreach(jobj1, key, val) {
@@ -691,8 +691,8 @@ int LUKS2_luks2_to_luks1(struct crypt_device *cd, struct luks2_hdr *hdr2, struct
 	size_t len;
 	json_object *jobj_keyslot, *jobj_digest, *jobj_area, *jobj_segment, *jobj1, *jobj2;
 	int i, r;
-	char buf[256], luksMagic[] = LUKS_MAGIC;
 	uint64_t offset;
+	char buf[256], luksMagic[] = LUKS_MAGIC;
 
 
 	jobj_digest  = LUKS2_get_digest_jobj(hdr2, 0);

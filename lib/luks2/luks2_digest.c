@@ -179,7 +179,7 @@ int LUKS2_digest_assign(struct crypt_device *cd, struct luks2_hdr *hdr,
 			int keyslot, int digest, int assign, int commit)
 {
 	json_object *jobj_digests;
-	int r;
+	int r = 0;
 
 	if (!LUKS2_get_keyslot_jobj(hdr, keyslot))
 		return -EINVAL;
@@ -199,5 +199,6 @@ int LUKS2_digest_assign(struct crypt_device *cd, struct luks2_hdr *hdr,
 	if (r < 0)
 		return r;
 
+	// FIXME: do not write header in nothing changed
 	return commit ? LUKS2_hdr_write(cd, hdr) : 0;
 }

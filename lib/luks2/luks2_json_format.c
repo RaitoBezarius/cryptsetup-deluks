@@ -53,7 +53,7 @@ static const char *uint64_to_str(char *buffer, size_t size, uint64_t *val)
 	if (r < 0) {
 		log_dbg("Failed to convert integer to string.");
 		*buffer = '\0';
-	} else if (r >= size) {
+	} else if ((size_t)r >= size) {
 		log_dbg("Not enough space to store '%" PRIu64 "' to a string buffer.", *val);
 		*buffer = '\0';
 	}
