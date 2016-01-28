@@ -27,7 +27,9 @@ EXTRA_DIST = compatimage.img.bz2 compatv10image.img.bz2 \
 	evil_hdr-small_luks_device.bz2 \
 	tcrypt-images.tar.bz2 \
 	luks1-images.tar.bz2 \
-	compat-test loopaes-test align-test discards-test mode-test password-hash-test \
+	compat-test \
+	compat-test2 \
+	loopaes-test align-test discards-test mode-test password-hash-test \
 	verity-compat-test \
 	reencryption-compat-test \
 	tcrypt-compat-test \

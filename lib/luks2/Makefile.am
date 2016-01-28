@@ -16,7 +16,7 @@ libluks2_la_SOURCES = \
 	luks2_keyslot.c \
 	luks2_keyslot_luks2.c \
 	luks2_keyslot_empty.c \
-	luks2-internal.h \
+	luks2_internal.h \
 	luks2.h
 
 AM_CPPFLAGS = -include config.h \
