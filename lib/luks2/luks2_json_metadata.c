@@ -1024,7 +1024,7 @@ int LUKS2_activate(struct crypt_device *cd,
 		.u.crypt = {
 			.vk     = vk,
 			.offset = crypt_get_data_offset(cd),
-			.cipher = crypt_get_cipher(cd),
+			.cipher = crypt_get_cipher_segment(cd, 0),
 			.iv_offset = 0,
 		}
 	};
