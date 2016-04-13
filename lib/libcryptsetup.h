@@ -165,6 +165,35 @@ void crypt_set_confirm_callback(struct crypt_device *cd,
 void crypt_set_iteration_time(struct crypt_device *cd, uint64_t iteration_time_ms);
 
 /**
+ * Set the number of iterations for PBKDF2 for DELUKS.
+ *
+ * @param cd crypt device handle
+ * @param iteration_num the number of iterations
+ */
+void crypt_set_iteration_num(struct crypt_device *cd, uint32_t iteration_num);
+
+/**
+ * Set if the DELUKS mount is bootable.
+ * Default 0: Not bootable. 1-254: Bootable, higher takes pirority. 255: Boot immediately.
+ *
+ * @param cd crypt device handle
+ * @param boot_priority the boot priority
+ */
+void crypt_set_boot_priority(struct crypt_device *cd, uint32_t boot_priority);
+
+// TODO: Description
+void crypt_set_options_cipher(struct crypt_device *cd, const char *options_cipher);
+
+// TODO: Description
+void crypt_set_options_cipher_mode(struct crypt_device *cd, const char *options_cipher_mode);
+
+// TODO: Description
+void crypt_set_key_size(struct crypt_device *cd, uint32_t key_size);
+
+// TODO: Description
+void crypt_set_hash_spec(struct crypt_device *cd, char *hash_spec);
+
+/**
  * Set data device
  * For LUKS it is encrypted data device when LUKS header is separated.
  * For VERITY it is data device when hash device is separated.
@@ -237,6 +266,8 @@ int crypt_memory_lock(struct crypt_device *cd, int lock);
 #define CRYPT_PLAIN "PLAIN"
 /** LUKS version 1 header on-disk */
 #define CRYPT_LUKS1 "LUKS1"
+/** DeLUKS version 1 header on-disk */
+#define CRYPT_DELUKS1 "DELUKS1"
 /** loop-AES compatibility mode */
 #define CRYPT_LOOPAES "LOOPAES"
 /** dm-verity mode */
@@ -275,6 +306,21 @@ struct crypt_params_plain {
  *
  */
 struct crypt_params_luks1 {
+	const char *hash; /**< hash used in LUKS header */
+	size_t data_alignment; /**< data alignment in sectors, data offset is multiple of this */
+	const char *data_device; /**< detached encrypted data device or @e NULL */
+};
+
+/**
+ * Structure used as parameter for LUKS device type.
+ *
+ * @see crypt_format, crypt_load
+ *
+ * @note during crypt_format @e data_device attribute determines
+ * 	 if the LUKS header is separated from encrypted payload device
+ *
+ */
+struct crypt_params_deluks1 {
 	const char *hash; /**< hash used in LUKS header */
 	size_t data_alignment; /**< data alignment in sectors, data offset is multiple of this */
 	const char *data_device; /**< detached encrypted data device or @e NULL */

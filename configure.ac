@@ -441,6 +441,13 @@ CS_STR_WITH([luks1-mode],   [cipher mode for LUKS1], [xts-plain64])
 CS_NUM_WITH([luks1-keybits],[key length in bits for LUKS1], [256])
 CS_NUM_WITH([luks1-iter-time],[PBKDF2 iteration time for LUKS1 (in ms)], [2000])
 
+CS_STR_WITH([deluks1-hash],   [hash function for DELUKS1 header], [sha256])
+CS_STR_WITH([deluks1-cipher], [cipher for DELUKS1], [aes])
+CS_STR_WITH([deluks1-mode],   [cipher mode for DELUKS1], [xts-plain64])
+CS_NUM_WITH([deluks1-keybits],[key length in bits for DELUKS1], [256])
+CS_NUM_WITH([deluks1-iter-time],[PBKDF2 iteration time for DELUKS1 (in ms)], [2000])
+CS_NUM_WITH([deluks1-iter-num],[PBKDF2 iteration number for DELUKS1], [32768])
+
 CS_STR_WITH([loopaes-cipher], [cipher for loop-AES mode], [aes])
 CS_NUM_WITH([loopaes-keybits],[key length in bits for loop-AES mode], [256])
 
@@ -459,6 +466,7 @@ lib/Makefile
 lib/libcryptsetup.pc
 lib/crypto_backend/Makefile
 lib/luks1/Makefile
+lib/deluks1/Makefile
 lib/loopaes/Makefile
 lib/verity/Makefile
 lib/tcrypt/Makefile

@@ -31,6 +31,7 @@
 
 #include "libcryptsetup.h"
 #include "luks.h"
+#include "deluks.h"
 #include "loopaes.h"
 #include "verity.h"
 #include "tcrypt.h"
@@ -54,6 +55,17 @@ struct crypt_device {
 		struct luks_phdr hdr;
 		uint64_t PBKDF2_per_sec;
 	} luks1;
+	struct { /* used in CRYPT_DELUKS1 */
+		struct deluks_phdr hdr;
+		uint64_t PBKDF2_per_sec;
+		uint32_t iteration_num;
+		uint32_t boot_priority;
+		uint32_t key_size;
+		char *hash_spec;
+		char *options_cipher;
+		char *options_cipher_mode;
+		// TODO: optionsSalt???
+	} deluks1;
 	struct { /* used in CRYPT_PLAIN */
 		struct crypt_params_plain hdr;
 		char *cipher;
@@ -230,6 +242,11 @@ static int isLUKS(const char *type)
 	return (type && !strcmp(CRYPT_LUKS1, type));
 }
 
+static int isDELUKS(const char *type)
+{
+	return (type && !strcmp(CRYPT_DELUKS1, type));
+}
+
 static int isLOOPAES(const char *type)
 {
 	return (type && !strcmp(CRYPT_LOOPAES, type));
@@ -261,6 +278,22 @@ static int onlyLUKS(struct crypt_device *cd)
 	return r;
 }
 
+static int onlyLUKSorDELUKS(struct crypt_device *cd)
+{
+	int r = 0;
+
+	if (cd && !cd->type) {
+		log_err(cd, _("Cannot determine device type. Incompatible activation of device?\n"));
+		r = -EINVAL;
+	}
+	if (!cd || (!isLUKS(cd->type) && !isDELUKS(cd->type))) {
+		log_err(cd, _("This operation is supported only for LUKS device.\n"));
+		r = -EINVAL;
+	}
+
+	return r;
+}
+
 static void crypt_set_null_type(struct crypt_device *cd)
 {
 	if (!cd->type)
@@ -283,15 +316,25 @@ static void crypt_reset_null_type(struct crypt_device *cd)
 /* keyslot helpers */
 static int keyslot_verify_or_find_empty(struct crypt_device *cd, int *keyslot)
 {
+	crypt_keyslot_info ki;
+
 	if (*keyslot == CRYPT_ANY_SLOT) {
-		*keyslot = LUKS_keyslot_find_empty(&cd->u.luks1.hdr);
+		if(isDELUKS(cd->type))
+			*keyslot = DELUKS_keyslot_find_empty(&cd->u.deluks1.hdr);
+		else
+			*keyslot = LUKS_keyslot_find_empty(&cd->u.luks1.hdr);
 		if (*keyslot < 0) {
 			log_err(cd, _("All key slots full.\n"));
 			return -EINVAL;
 		}
 	}
 
-	switch (LUKS_keyslot_info(&cd->u.luks1.hdr, *keyslot)) {
+	if(isDELUKS(cd->type))
+		ki = DELUKS_keyslot_info(&cd->u.deluks1.hdr, *keyslot);
+	else
+		ki = LUKS_keyslot_info(&cd->u.luks1.hdr, *keyslot);
+
+	switch (ki) {
 		case CRYPT_SLOT_INVALID:
 			log_err(cd, _("Key slot %d is invalid, please select between 0 and %d.\n"),
 				*keyslot, LUKS_NUMKEYS - 1);
@@ -508,7 +551,7 @@ int crypt_set_data_device(struct crypt_device *cd, const char *device)
 
 	log_dbg("Setting ciphertext data device to %s.", device ?: "(none)");
 
-	if (!isLUKS(cd->type) && !isVERITY(cd->type)) {
+	if (!isLUKS(cd->type) && !isDELUKS(cd->type) && !isVERITY(cd->type)) {
 		log_err(cd, _("This operation is not supported for this device type.\n"));
 		return  -EINVAL;
 	}
@@ -548,6 +591,27 @@ static int _crypt_load_luks1(struct crypt_device *cd, int require_header, int re
 		return -ENOMEM;
 
 	memcpy(&cd->u.luks1.hdr, &hdr, sizeof(hdr));
+
+	return r;
+}
+
+static int _crypt_load_deluks1(struct crypt_device *cd, int require_header, int repair)
+{
+	struct deluks_phdr hdr;
+	int r;
+
+	r = init_crypto(cd);
+	if (r < 0)
+		return r;
+
+	r = DELUKS_read_phdr(&hdr, require_header, repair, cd);
+	if (r < 0)
+		return r;
+
+	if (!cd->type && !(cd->type = strdup(CRYPT_DELUKS1)))
+		return -ENOMEM;
+
+	memcpy(&cd->u.deluks1.hdr, &hdr, sizeof(hdr));
 
 	return r;
 }
@@ -786,6 +850,8 @@ int crypt_init_by_name_and_header(struct crypt_device **cd,
 			(*cd)->type = strdup(CRYPT_LOOPAES);
 		else if (!strncmp(CRYPT_LUKS1, dmd.uuid, sizeof(CRYPT_LUKS1)-1))
 			(*cd)->type = strdup(CRYPT_LUKS1);
+		else if (!strncmp(CRYPT_DELUKS1, dmd.uuid, sizeof(CRYPT_LUKS1)-1))
+			(*cd)->type = strdup(CRYPT_DELUKS1);
 		else if (!strncmp(CRYPT_VERITY, dmd.uuid, sizeof(CRYPT_VERITY)-1))
 			(*cd)->type = strdup(CRYPT_VERITY);
 		else if (!strncmp(CRYPT_TCRYPT, dmd.uuid, sizeof(CRYPT_TCRYPT)-1))
@@ -943,6 +1009,84 @@ static int _crypt_format_luks1(struct crypt_device *cd,
 	}
 
 	r = LUKS_write_phdr(&cd->u.luks1.hdr, cd);
+
+	return r;
+}
+
+static int _crypt_format_deluks1(struct crypt_device *cd,
+			       const char *cipher,
+			       const char *cipher_mode,
+			       const char *uuid,
+			       const char *volume_key,
+			       size_t volume_key_size,
+			       struct crypt_params_luks1 *params)
+{
+	int r;
+	unsigned long required_alignment = DEFAULT_DISK_ALIGNMENT;
+	unsigned long alignment_offset = 0;
+
+	if (!crypt_metadata_device(cd)) {
+		log_err(cd, _("Can't format LUKS without device.\n"));
+		return -EINVAL;
+	}
+
+	if (!(cd->type = strdup(CRYPT_DELUKS1)))
+		return -ENOMEM;
+
+	if (volume_key)
+		cd->volume_key = crypt_alloc_volume_key(volume_key_size,
+						      volume_key);
+	else
+		cd->volume_key = crypt_generate_volume_key(cd, volume_key_size);
+
+	if(!cd->volume_key)
+		return -ENOMEM;
+
+	if (params && params->data_device) { // Generate from remote header - unsupported
+		cd->metadata_device = cd->device;
+		cd->device = NULL;
+		if (device_alloc(&cd->device, params->data_device) < 0)
+			return -ENOMEM;
+		required_alignment = params->data_alignment * SECTOR_SIZE;
+	} else if (params && params->data_alignment) {
+		required_alignment = params->data_alignment * SECTOR_SIZE;
+	} else
+		device_topology_alignment(cd->device,
+				       &required_alignment,
+				       &alignment_offset, DEFAULT_DISK_ALIGNMENT);
+
+	log_dbg("Required alignement:\t%lu\n", required_alignment); // TEMP
+
+	r = DELUKS_generate_phdr(&cd->u.deluks1.hdr, cd->volume_key, cipher, cipher_mode,
+			       (params && params->hash) ? params->hash : DEFAULT_DELUKS1_HASH,
+			       uuid, DELUKS_STRIPES,
+			       required_alignment / SECTOR_SIZE,
+			       alignment_offset / SECTOR_SIZE,
+			       cd->u.deluks1.boot_priority,
+			       cd->u.deluks1.iteration_num,
+			       cd->iteration_time, &cd->u.deluks1.PBKDF2_per_sec,
+			       cd->metadata_device ? 1 : 0, cd);
+	if(r < 0)
+		return r;
+
+	/* Wipe first 8 sectors - fs magic numbers etc. */
+	r = crypt_wipe(crypt_metadata_device(cd), 0, 8 * SECTOR_SIZE, CRYPT_WIPE_ZERO, 1);
+	if(r < 0) {
+		if (r == -EBUSY)
+			log_err(cd, _("Cannot format device %s which is still in use.\n"),
+				mdata_device_path(cd));
+		else if (r == -EACCES) {
+			log_err(cd, _("Cannot format device %s, permission denied.\n"),
+				mdata_device_path(cd));
+			r = -EINVAL;
+		} else
+			log_err(cd, _("Cannot wipe header on device %s.\n"),
+				mdata_device_path(cd));
+
+		return r;
+	}
+
+	r = DELUKS_write_phdr(&cd->u.deluks1.hdr, cd);
 
 	return r;
 }
@@ -1120,6 +1264,9 @@ int crypt_format(struct crypt_device *cd,
 	else if (isLUKS(type))
 		r = _crypt_format_luks1(cd, cipher, cipher_mode,
 					uuid, volume_key, volume_key_size, params);
+	else if (isDELUKS(type))
+		r = _crypt_format_deluks1(cd, cipher, cipher_mode,
+					uuid, volume_key, volume_key_size, params);
 	else if (isLOOPAES(type))
 		r = _crypt_format_loopaes(cd, cipher, uuid, volume_key_size, params);
 	else if (isVERITY(type))
@@ -1159,6 +1306,13 @@ int crypt_load(struct crypt_device *cd,
 		}
 
 		r = _crypt_load_luks1(cd, 1, 0);
+	} else if (isDELUKS(requested_type)) {
+		if (cd->type && !isDELUKS(cd->type)) {
+			log_dbg("Context is already initialised to type %s", cd->type);
+			return -EINVAL;
+		}
+
+		r = _crypt_load_deluks1(cd, 1, 0);
 	} else if (isVERITY(requested_type)) {
 		if (cd->type && !isVERITY(cd->type)) {
 			log_dbg("Context is already initialised to type %s", cd->type);
@@ -1385,7 +1539,7 @@ int crypt_suspend(struct crypt_device *cd,
 	} else {
 		r = crypt_uuid_type_cmp(cd, CRYPT_LUKS1);
 		if (r < 0)
-			log_err(cd, _("This operation is supported only for LUKS device.\n"));
+			log_err(cd, _("This operation (crypt_suspend) is supported only for LUKS device.\n"));
 	}
 
 	if (r < 0)
@@ -1728,7 +1882,7 @@ int crypt_keyslot_add_by_volume_key(struct crypt_device *cd,
 
 	log_dbg("Adding new keyslot %d using volume key.", keyslot);
 
-	r = onlyLUKS(cd);
+	r = onlyLUKSorDELUKS(cd);
 	if (r < 0)
 		return r;
 
@@ -1743,7 +1897,11 @@ int crypt_keyslot_add_by_volume_key(struct crypt_device *cd,
 	if (!vk)
 		return -ENOMEM;
 
-	r = LUKS_verify_volume_key(&cd->u.luks1.hdr, vk);
+	if (isLUKS(cd->type)) {
+		r = LUKS_verify_volume_key(&cd->u.luks1.hdr, vk);
+	} else if  (isDELUKS(cd->type)) {
+		r = DELUKS_verify_volume_key(&cd->u.deluks1.hdr, vk);
+	}
 	if (r < 0) {
 		log_err(cd, _("Volume key does not match the volume.\n"));
 		goto out;
@@ -1753,8 +1911,13 @@ int crypt_keyslot_add_by_volume_key(struct crypt_device *cd,
 	if (r)
 		goto out;
 
-	r = LUKS_set_key(keyslot, passphrase, passphrase_size,
-			 &cd->u.luks1.hdr, vk, cd->iteration_time, &cd->u.luks1.PBKDF2_per_sec, cd);
+	if (isLUKS(cd->type)) {
+		r = LUKS_set_key(keyslot, passphrase, passphrase_size,
+				 &cd->u.luks1.hdr, vk, cd->iteration_time, &cd->u.luks1.PBKDF2_per_sec, cd);
+	} else if  (isDELUKS(cd->type)) {
+		r = DELUKS_set_key(keyslot, passphrase, passphrase_size,
+				 &cd->u.deluks1.hdr, vk, cd->iteration_time, &cd->u.luks1.PBKDF2_per_sec, cd);
+	}
 out:
 	crypt_free_volume_key(vk);
 	return (r < 0) ? r : keyslot;
@@ -2107,6 +2270,9 @@ int crypt_volume_key_get(struct crypt_device *cd,
 	} else if (isLUKS(cd->type)) {
 		r = LUKS_open_key_with_hdr(keyslot, passphrase,
 					passphrase_size, &cd->u.luks1.hdr, &vk, cd);
+	} else if (isDELUKS(cd->type)) {
+		r = DELUKS_open_key_with_hdr(keyslot, passphrase,
+					passphrase_size, &cd->u.deluks1.hdr, &vk, cd);
 	} else if (isTCRYPT(cd->type)) {
 		r = TCRYPT_get_volume_key(cd, &cd->u.tcrypt.hdr, &cd->u.tcrypt.params, &vk);
 	} else
@@ -2150,6 +2316,42 @@ void crypt_set_iteration_time(struct crypt_device *cd, uint64_t iteration_time_m
 {
 	log_dbg("Iteration time set to %" PRIu64 " miliseconds.", iteration_time_ms);
 	cd->iteration_time = iteration_time_ms;
+}
+
+void crypt_set_iteration_num(struct crypt_device *cd, uint32_t iteration_num)
+{
+	log_dbg("Iteration number set to %" PRIu32 ".", iteration_num);
+	cd->u.deluks1.iteration_num = iteration_num;
+}
+
+void crypt_set_boot_priority(struct crypt_device *cd, uint32_t boot_priority)
+{
+	log_dbg("Boot priority set to %" PRIu32 ".", boot_priority);
+	cd->u.deluks1.boot_priority = boot_priority;
+}
+
+void crypt_set_options_cipher(struct crypt_device *cd, const char *options_cipher)
+{
+	log_dbg("Cipher name set to %s.", options_cipher);
+	cd->u.deluks1.options_cipher = strdup(options_cipher);
+}
+
+void crypt_set_options_cipher_mode(struct crypt_device *cd, const char *options_cipher_mode)
+{
+	log_dbg("Cipher mode set to %s.", options_cipher_mode);
+	cd->u.deluks1.options_cipher_mode = strdup(options_cipher_mode);
+}
+
+void crypt_set_key_size(struct crypt_device *cd, uint32_t key_size)
+{
+	log_dbg("Key size set to %" PRIu32 " bytes.", key_size);
+	cd->u.deluks1.key_size = key_size;
+}
+
+void crypt_set_hash_spec(struct crypt_device *cd, char *hash_spec)
+{
+	log_dbg("Hash spec set to %s.", hash_spec);
+	cd->u.deluks1.hash_spec = strdup(hash_spec);
 }
 
 void crypt_set_rng_type(struct crypt_device *cd, int rng_type)
@@ -2252,6 +2454,52 @@ static int _luks_dump(struct crypt_device *cd)
 	return 0;
 }
 
+// DUMP only after processing
+static int _deluks_dump(struct crypt_device *cd)
+{
+	int i;
+
+	log_std(cd, "DELUKS header information for %s\n\n", mdata_device_path(cd));
+	log_std(cd, "Version:       \t%" PRIu16 "\n", cd->u.deluks1.hdr.version);
+	log_std(cd, "Cipher name:   \t%s\n", cd->u.deluks1.hdr.cipherName);
+	log_std(cd, "Cipher mode:   \t%s\n", cd->u.deluks1.hdr.cipherMode);
+	log_std(cd, "Hash spec:     \t%s\n", cd->u.deluks1.hdr.hashSpec);
+	log_std(cd, "Payload offset:\t%" PRIu32 "\n", cd->u.deluks1.hdr.payloadOffset);
+	log_std(cd, "MK bits:       \t%" PRIu32 "\n", cd->u.deluks1.hdr.keyBytes * 8);
+	log_std(cd, "MK digest:     \t");
+	hexprint(cd, cd->u.deluks1.hdr.mkDigest, LUKS_DIGESTSIZE, " ");
+	log_std(cd, "\n");
+	log_std(cd, "MK salt:       \t");
+	hexprint(cd, cd->u.deluks1.hdr.mkDigestSalt, LUKS_SALTSIZE/2, " ");
+	log_std(cd, "\n               \t");
+	hexprint(cd, cd->u.deluks1.hdr.mkDigestSalt+LUKS_SALTSIZE/2, LUKS_SALTSIZE/2, " ");
+	log_std(cd, "\n");
+	log_std(cd, "MK iterations: \t%" PRIu32 "\n", cd->u.deluks1.hdr.mkDigestIterations);
+	log_std(cd, "UUID:          \t%s\n\n", cd->u.deluks1.hdr.uuid);
+	for(i = 0; i < LUKS_NUMKEYS; i++) {
+		if(cd->u.deluks1.hdr.keyblock[i].active == LUKS_KEY_ENABLED) {
+			log_std(cd, "Key Slot %d: ENABLED\n",i);
+			log_std(cd, "\tIterations:         \t%" PRIu32 "\n",
+				cd->u.deluks1.hdr.keyblock[i].passwordIterations);
+			log_std(cd, "\tSalt:               \t");
+			hexprint(cd, cd->u.deluks1.hdr.keyblock[i].passwordSalt,
+				 LUKS_SALTSIZE/2, " ");
+			log_std(cd, "\n\t                      \t");
+			hexprint(cd, cd->u.deluks1.hdr.keyblock[i].passwordSalt +
+				 LUKS_SALTSIZE/2, LUKS_SALTSIZE/2, " ");
+			log_std(cd, "\n");
+
+			log_std(cd, "\tKey material offset:\t%" PRIu32 "\n",
+				cd->u.deluks1.hdr.keyblock[i].keyMaterialOffset);
+			log_std(cd, "\tAF stripes:            \t%" PRIu32 "\n",
+				cd->u.deluks1.hdr.keyblock[i].stripes);
+		}
+		else 
+			log_std(cd, "Key Slot %d: DISABLED\n", i);
+	}
+	return 0;
+}
+
 static int _verity_dump(struct crypt_device *cd)
 {
 	log_std(cd, "VERITY header information for %s\n", mdata_device_path(cd));
@@ -2321,6 +2569,9 @@ const char *crypt_get_cipher(struct crypt_device *cd)
 	if (isLUKS(cd->type))
 		return cd->u.luks1.hdr.cipherName;
 
+	if (isDELUKS(cd->type))
+		return cd->u.deluks1.hdr.cipherName;
+
 	if (isLOOPAES(cd->type))
 		return cd->u.loopaes.cipher;
 
@@ -2341,6 +2592,9 @@ const char *crypt_get_cipher_mode(struct crypt_device *cd)
 	if (isLUKS(cd->type))
 		return cd->u.luks1.hdr.cipherMode;
 
+	if (isDELUKS(cd->type))
+		return cd->u.deluks1.hdr.cipherMode;
+
 	if (isLOOPAES(cd->type))
 		return cd->u.loopaes.cipher_mode;
 
@@ -2357,6 +2611,9 @@ const char *crypt_get_uuid(struct crypt_device *cd)
 {
 	if (isLUKS(cd->type))
 		return cd->u.luks1.hdr.uuid;
+
+	if (isDELUKS(cd->type))
+		return cd->u.deluks1.hdr.uuid;
 
 	if (isVERITY(cd->type))
 		return cd->u.verity.uuid;
@@ -2382,6 +2639,9 @@ int crypt_get_volume_key_size(struct crypt_device *cd)
 	if (isLUKS(cd->type))
 		return cd->u.luks1.hdr.keyBytes;
 
+	if (isDELUKS(cd->type))
+		return cd->u.deluks1.hdr.keyBytes;
+
 	if (isLOOPAES(cd->type))
 		return cd->u.loopaes.key_size;
 
@@ -2405,6 +2665,9 @@ uint64_t crypt_get_data_offset(struct crypt_device *cd)
 	if (isLUKS(cd->type))
 		return cd->u.luks1.hdr.payloadOffset;
 
+	if (isDELUKS(cd->type))
+		return cd->u.deluks1.hdr.payloadOffset;
+
 	if (isLOOPAES(cd->type))
 		return cd->u.loopaes.hdr.offset;
 
@@ -2422,6 +2685,9 @@ uint64_t crypt_get_iv_offset(struct crypt_device *cd)
 	if (isLUKS(cd->type))
 		return 0;
 
+	if (isDELUKS(cd->type))
+		return 0;
+
 	if (isLOOPAES(cd->type))
 		return cd->u.loopaes.hdr.skip;
 
@@ -2433,16 +2699,23 @@ uint64_t crypt_get_iv_offset(struct crypt_device *cd)
 
 crypt_keyslot_info crypt_keyslot_status(struct crypt_device *cd, int keyslot)
 {
-	if (onlyLUKS(cd) < 0)
-		return CRYPT_SLOT_INVALID;
 
-	return LUKS_keyslot_info(&cd->u.luks1.hdr, keyslot);
+	if (isLUKS(cd->type))
+		return LUKS_keyslot_info(&cd->u.luks1.hdr, keyslot);
+
+	else if (isDELUKS(cd->type))
+		return DELUKS_keyslot_info(&cd->u.deluks1.hdr, keyslot);
+
+	return CRYPT_SLOT_INVALID;
 }
 
 int crypt_keyslot_max(const char *type)
 {
 	if (type && isLUKS(type))
 		return LUKS_NUMKEYS;
+
+	else if (type && isDELUKS(type))
+		return DELUKS_NUMKEYS;
 
 	return -EINVAL;
 }
@@ -2452,10 +2725,12 @@ int crypt_keyslot_area(struct crypt_device *cd,
 	uint64_t *offset,
 	uint64_t *length)
 {
-	if (!isLUKS(cd->type))
-		return -EINVAL;
+	if (isLUKS(cd->type))
+		return LUKS_keyslot_area(&cd->u.luks1.hdr, keyslot, offset, length);
+	else if (isDELUKS(cd->type))
+		return DELUKS_keyslot_area(&cd->u.deluks1.hdr, keyslot, offset, length);
 
-	return LUKS_keyslot_area(&cd->u.luks1.hdr, keyslot, offset, length);
+	return -EINVAL;
 }
 
 const char *crypt_get_type(struct crypt_device *cd)

@@ -37,4 +37,6 @@ po/*.sed
 po/*.sin
 po/stamp-po
 stamp-h1
+po/*.po
+
 

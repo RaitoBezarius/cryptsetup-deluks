@@ -49,6 +49,7 @@ static uint64_t opt_skip = 0;
 static int opt_skip_valid = 0;
 static int opt_readonly = 0;
 static int opt_iteration_time = DEFAULT_LUKS1_ITER_TIME;
+static int opt_iteration_num = DEFAULT_DELUKS1_ITER_NUM;
 static int opt_version_mode = 0;
 static int opt_timeout = 0;
 static int opt_tries = 3;
@@ -65,6 +66,7 @@ static int opt_tcrypt_hidden = 0;
 static int opt_tcrypt_system = 0;
 static int opt_tcrypt_backup = 0;
 static int opt_veracrypt = 0;
+static int opt_boot_priority = 0;
 
 static const char **action_argv;
 static int action_argc;
@@ -758,6 +760,101 @@ out:
 	return r;
 }
 
+static int action_deluksFormat(void)
+{
+	int r = -EINVAL, keysize;
+	const char *header_device;
+	char *msg = NULL, *key = NULL, cipher [MAX_CIPHER_LEN], cipher_mode[MAX_CIPHER_LEN];
+	char *password = NULL;
+	size_t passwordLen;
+	struct crypt_device *cd = NULL;
+	struct crypt_params_deluks1 params = {
+		.hash = opt_hash ?: DEFAULT_DELUKS1_HASH,
+		.data_alignment = opt_align_payload,
+		.data_device = opt_header_device ? action_argv[0] : NULL,
+	};
+
+	header_device = opt_header_device ?: action_argv[0];
+
+	// TODO: Add support to format "partitions" of unallocated space
+	if(asprintf(&msg, _("This will overwrite data on %s irrevocably."),
+		    header_device) == -1) {
+		log_err(_("memory allocation error in action_deluksFormat"));
+		r = -ENOMEM;
+		goto out;
+	}
+	r = yesDialog(msg, NULL) ? 0 : -EINVAL;
+	free(msg);
+	if (r < 0)
+		goto out;
+
+	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
+				      cipher, NULL, cipher_mode);
+	if (r < 0) {
+		log_err(_("No known cipher specification pattern detected.\n"));
+		goto out;
+	}
+
+	/* Never call pwquality if using null cipher */
+	if (tools_is_cipher_null(cipher))
+		opt_force_password = 1;
+
+	if ((r = crypt_init(&cd, header_device))) {
+		if (opt_header_device)
+			log_err(_("Cannot use %s as on-disk header.\n"), header_device);
+		goto out;
+	}
+
+	// TODO: Enter preset animal code & deduct + set hashspec, iter_num, keylen, cipher, keysize
+	// TODO: Refuse real partitions
+	// TODO: Add support for unallocated space "partitions" aligned at 1MiB
+
+	crypt_set_boot_priority(cd, opt_boot_priority);	
+
+	keysize = (opt_key_size ?: DEFAULT_DELUKS1_KEYBITS) / 8;
+
+	if (opt_iteration_time) {
+		crypt_set_iteration_num(cd, 0);
+		crypt_set_iteration_time(cd, opt_iteration_time);
+	}
+
+	if (opt_iteration_num)
+		crypt_set_iteration_num(cd, opt_iteration_num);
+
+	if (opt_random)
+		crypt_set_rng_type(cd, CRYPT_RNG_RANDOM);
+	else if (opt_urandom)
+		crypt_set_rng_type(cd, CRYPT_RNG_URANDOM);
+
+	r = tools_get_key(_("Enter passphrase: "), &password, &passwordLen,
+			  opt_keyfile_offset, opt_keyfile_size, opt_key_file,
+			  opt_timeout, _verify_passphrase(1), 1, cd);
+	if (r < 0)
+		goto out;
+
+	if (opt_master_key_file) {
+		r = _read_mk(opt_master_key_file, &key, keysize);
+		if (r < 0)
+			goto out;
+	}
+
+	r = crypt_format(cd, CRYPT_DELUKS1, cipher, cipher_mode,
+			 opt_uuid, key, keysize, &params);
+	check_signal(&r);
+	if (r < 0)
+		goto out;
+
+	r = crypt_keyslot_add_by_volume_key(cd, opt_key_slot,
+					    key, keysize,
+					    password, passwordLen);
+out:
+	crypt_free(cd);
+	crypt_safe_free(key);
+	crypt_safe_free(password);
+
+	return r;
+}
+
 static int action_open_luks(void)
 {
 	struct crypt_device *cd = NULL;
@@ -790,6 +887,82 @@ static int action_open_luks(void)
 
 	if (opt_iteration_time)
 		crypt_set_iteration_time(cd, opt_iteration_time);
+
+	_set_activation_flags(&activate_flags);
+
+	if (opt_master_key_file) {
+		keysize = crypt_get_volume_key_size(cd);
+		r = _read_mk(opt_master_key_file, &key, keysize);
+		if (r < 0)
+			goto out;
+		r = crypt_activate_by_volume_key(cd, activated_name,
+						 key, keysize, activate_flags);
+	} else {
+		r = tools_get_key(NULL, &password, &passwordLen,
+				  opt_keyfile_offset, opt_keyfile_size, opt_key_file,
+				  opt_timeout, _verify_passphrase(0), 0, cd);
+		if (r < 0)
+			goto out;
+
+		r = crypt_activate_by_passphrase(cd, activated_name,
+			opt_key_slot, password, passwordLen, activate_flags);
+	}
+out:
+	crypt_safe_free(key);
+	crypt_safe_free(password);
+	crypt_free(cd);
+	return r;
+}
+
+static int action_open_deluks(void)
+{
+	struct crypt_device *cd = NULL;
+	const char *data_device, *header_device, *activated_name;
+	char *key = NULL;
+	uint32_t activate_flags = 0;
+	int r, keysize;
+	char *password = NULL;
+	char *hash_spec;
+	size_t passwordLen;
+	char cipher[MAX_CIPHER_LEN], cipher_mode[MAX_CIPHER_LEN];
+
+	header_device = uuid_or_device_header(&data_device);
+
+	activated_name = opt_test_passphrase ? NULL : action_argv[1];
+
+	if ((r = crypt_init(&cd, header_device)))
+		goto out;
+
+	if ((r = crypt_load(cd, CRYPT_DELUKS1, NULL)))
+		goto out;
+
+	if (data_device &&
+	    (r = crypt_set_data_device(cd, data_device)))
+		goto out;
+
+	if (!data_device && (crypt_get_data_offset(cd) < 8)) {
+		log_err(_("Reduced data offset is allowed only for detached DELUKS header.\n"));
+		r = -EINVAL;
+		goto out;
+	}
+	if (opt_iteration_time)
+		crypt_set_iteration_time(cd, opt_iteration_time);
+
+	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
+				      cipher, NULL, cipher_mode);
+	if (r < 0) {
+		log_err(_("No known cipher specification pattern detected.\n"));
+		goto out;
+	}
+
+	crypt_set_options_cipher(cd, cipher);
+
+	crypt_set_options_cipher_mode(cd, cipher_mode);
+
+	crypt_set_key_size(cd, opt_key_size ? opt_key_size / 8 : DEFAULT_DELUKS1_KEYBITS / 8);
+
+	hash_spec = strdup(opt_hash)?:strdup(DEFAULT_DELUKS1_HASH);
+	crypt_set_hash_spec(cd, hash_spec);
 
 	_set_activation_flags(&activate_flags);
 
@@ -1113,6 +1286,27 @@ out:
 	return r;
 }
 
+static int action_isDeLuks(void)
+{
+	struct crypt_device *cd = NULL;
+	int r;
+
+	/* FIXME: argc > max should be checked for other operations as well */
+	if (action_argc > 1) {
+		log_err(_("Only one device argument for isDeLuks operation is supported.\n"));
+		return -ENODEV;
+	}
+
+	if ((r = crypt_init(&cd, uuid_or_device_header(NULL))))
+		goto out;
+
+	crypt_set_log_callback(cd, quiet_log, NULL);
+	r = crypt_load(cd, CRYPT_DELUKS1, NULL);
+out:
+	crypt_free(cd);
+	return r;
+}
+
 static int action_luksUUID(void)
 {
 	struct crypt_device *cd = NULL;
@@ -1302,6 +1496,10 @@ static int action_open(void)
 		if (action_argc < 2 && !opt_test_passphrase)
 			goto args;
 		return action_open_luks();
+	} else if (!strcmp(opt_type, "deluks") || !strcmp(opt_type, "deluks1")) {
+		if (action_argc < 2 && !opt_test_passphrase)
+			goto args;
+		return action_open_deluks();
 	} else if (!strcmp(opt_type, "plain")) {
 		if (action_argc < 2)
 			goto args;
@@ -1379,6 +1577,7 @@ static struct action_type {
 	{ "benchmark",    action_benchmark,    0, 0, N_("<name>"), N_("benchmark cipher") },
 	{ "repair",       action_luksRepair,   1, 1, N_("<device>"), N_("try to repair on-disk metadata") },
 	{ "erase",        action_luksErase ,   1, 1, N_("<device>"), N_("erase all keyslots (remove encryption key)") },
+	{ "deluksFormat", action_deluksFormat, 1, 1, N_("<device> [<new key file>]"), N_("formats a DeLUKS device") },
 	{ "luksFormat",   action_luksFormat,   1, 1, N_("<device> [<new key file>]"), N_("formats a LUKS device") },
 	{ "luksAddKey",   action_luksAddKey,   1, 1, N_("<device> [<new key file>]"), N_("add key to LUKS device") },
 	{ "luksRemoveKey",action_luksRemoveKey,1, 1, N_("<device> [<key file>]"), N_("removes supplied key or key file from LUKS device") },
@@ -1386,6 +1585,7 @@ static struct action_type {
 	{ "luksKillSlot", action_luksKillSlot, 2, 1, N_("<device> <key slot>"), N_("wipes key with number <key slot> from LUKS device") },
 	{ "luksUUID",     action_luksUUID,     1, 0, N_("<device>"), N_("print UUID of LUKS device") },
 	{ "isLuks",       action_isLuks,       1, 0, N_("<device>"), N_("tests <device> for LUKS partition header") },
+	{ "isDeLuks",     action_isDeLuks,     1, 0, N_("<device>"), N_("tests <device> for DELUKS partition header") },
 	{ "luksDump",     action_luksDump,     1, 1, N_("<device>"), N_("dump LUKS partition information") },
 	{ "tcryptDump",   action_tcryptDump,   1, 1, N_("<device>"), N_("dump TCRYPT device information") },
 	{ "luksSuspend",  action_luksSuspend,  1, 1, N_("<device>"), N_("Suspend LUKS device and wipe key (all IOs are frozen).") },
@@ -1507,7 +1707,9 @@ int main(int argc, const char **argv)
 		{ "offset",            'o',  POPT_ARG_STRING, &popt_tmp,                2, N_("The start offset in the backend device"), N_("SECTORS") },
 		{ "skip",              'p',  POPT_ARG_STRING, &popt_tmp,                3, N_("How many sectors of the encrypted data to skip at the beginning"), N_("SECTORS") },
 		{ "readonly",          'r',  POPT_ARG_NONE, &opt_readonly,              0, N_("Create a readonly mapping"), NULL },
+		{ "boot-priority",     'b',  POPT_ARG_INT, &opt_boot_priority,          0, N_("Device is bootable by DELUKS (255: boot immediately)"), NULL },
 		{ "iter-time",         'i',  POPT_ARG_INT, &opt_iteration_time,         0, N_("PBKDF2 iteration time for LUKS (in ms)"), N_("msecs") },
+		{ "iterations",        'I',  POPT_ARG_INT, &opt_iteration_num,          0, N_("PBKDF2 number of iterations for DELUKS (in ms)"), N_("msecs") },
 		{ "batch-mode",        'q',  POPT_ARG_NONE, &opt_batch_mode,            0, N_("Do not ask for confirmation"), NULL },
 		{ "timeout",           't',  POPT_ARG_INT, &opt_timeout,                0, N_("Timeout for interactive passphrase prompt (in seconds)"), N_("secs") },
 		{ "tries",             'T',  POPT_ARG_INT, &opt_tries,                  0, N_("How often the input of the passphrase can be retried"), NULL },
@@ -1623,6 +1825,9 @@ int main(int argc, const char **argv)
 	} else if (!strcmp(aname, "luksOpen")) {
 		aname = "open";
 		opt_type = "luks";
+	} else if (!strcmp(aname, "deluksOpen")) {
+		aname = "open";
+		opt_type = "deluks";
 	} else if (!strcmp(aname, "loopaesOpen")) {
 		aname = "open";
 		opt_type = "loopaes";
