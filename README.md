@@ -1,82 +1,39 @@
-![LUKS logo](https://gitlab.com/cryptsetup/cryptsetup/wikis/luks-logo.png)
+# Introduction
 
-What the ...?
-=============
-**Cryptsetup** is utility used to conveniently setup disk encryption based
-on [DMCrypt](https://gitlab.com/cryptsetup/cryptsetup/wikis/DMCrypt) kernel module.
 
-These include **plain** **dm-crypt** volumes, **LUKS** volumes, **loop-AES**
-and **TrueCrypt** (including **VeraCrypt** extension) format.
 
-Project also includes **veritysetup** utility used to conveniently setup
-[DMVerity](https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity) block integrity checking kernel module.
+[![DeLUKS: Deniable Linux Unified Key Setup](https://raw.githubusercontent.com/kriswebdev/grub-crypto-deluks/gh-pages/assets/deluks_logo.png)](https://github.com/kriswebdev/grub-crypto-deluks)
 
-LUKS Design
------------
-**LUKS** is the standard for Linux hard disk encryption. By providing a standard on-disk-format, it does not  
-only facilitate compatibility among distributions, but also provides secure management of multiple user passwords.  
-In contrast to existing solution, LUKS stores all setup necessary setup information in the partition header,  
-enabling the user to transport or migrate his data seamlessly.
+This development branch is a work in progress to specify and implement a Deniable LUKS header in **Cryptsetup**.
 
-Why LUKS?
----------
- * compatiblity via standardization,
- * secure against low entropy attacks,
- * support for multiple keys,
- * effective passphrase revocation,
- * free.
+DeLUKS will provide most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption).
 
-[Project home page](https://gitlab.com/cryptsetup/cryptsetup/).
------------------
+Expected Features
+===
+- **QUICK BOOT!** At GRUB menu, press `c` to get into GRUB shell, then `cryptomount -x` and your password. That's all!
+- **DENIABLE!**
+  - DeLUKS header and encrypted payload are **indistinguishable from random data**. *"Why is there random data on your unallocated disk space? - I wiped my disk"*
+  - Bootloader is nothing more than **GRUB**. If the code is integrated upstream, the setup will even be indistinguishable from mainstream GRUB *"Why do you have a bootloader with deniable decryption feature? - Do I? It's the default GRUB."*
+  - **No bootloader password menu**. Base of deny, YOU command the bootloader to ask you for a password, not the other way round. *"Look, I just installed this O.S. on my wiped drive, it's GRUB's only menu choice. Where would I hide something?"*
+  - DeLUKS finds encrypted disks by **scanning** & trying to mount all unallocated disk space > 2MiB.
+  - **No poorly secured USB key** needed! But use one if you really want to. *"We didn't find any (1) remote header (2) unencrypted keyfile (3) loosely brute-forcable plain dm-crypt keyfile (choose one) on your USB key."*
+- LUKS **multiple keyslots**: You can decrypt a disk with any one of 8 passwords. You can change and revok the passwords.
+- LUKS protection **against rainbow table** attacks: Master key is encrypted with a salt.
+- LUKS **slow brute-forcing**: User password is encrypted with several hash iterations and a salt.
+- LUKS **anti-forensic** information splitter: Low risk that the master key could be decrypted with a revoked password (protection against damaged disk blocks storing the revoked keyslot).
+- **Pure dm-crypt**, no TrueCrypt.
+- **No need for Truecrypt-style "hidden partition"**. Instead, you can create a true partition with a fake O.S. GRUB will by default boot on this fake O.S.
 
-[Frequently asked questions (FAQ)](https://gitlab.com/cryptsetup/cryptsetup/wikis/FrequentlyAskedQuestions)
---------------------------------
+Theoretical limitations and workarounds
+===
+It is difficult to write the header encryption parameters on disk without compromising deniability character or security.
+Therefore the Master key / keyslots encryption parameters should use DeLUKS default presets of the installed GRUB version (or be provided through command-line arguments at each boot as an annoying last resort).
 
-Download
---------
-All release tarballs and release notes are hosted on [kernel.org](https://www.kernel.org/pub/linux/utils/cryptsetup/).
+However, default presets hard-coded in GRUB-cryptomount shall regularly evolve to follow security best practices.
+Hence, once GRUB is updated with newer DeLUKS default presets, it shall behave according to this procedure:
+- GRUB-cryptomount will try to decrypt the disks using the latests presets.
+- If GRUB-cryptomount fails to decrypt any disk, it will try with older presets.
+- If GRUB-cryptomount succeds to decrypt any disk with older presets, it shall warn the user to re-create the DeLUKS header with newer presets using cryptsetup. And continue booting.
 
-**The latest cryptsetup version is 1.7.1**
-  * [cryptsetup-1.7.1.tar.xz](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/cryptsetup-1.7.1.tar.xz)
-  * Signature [cryptsetup-1.7.1.tar.sign](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/cryptsetup-1.7.1.tar.sign)
-    _(You need to decompress file first to check signature.)_
-  * [Cryptsetup 1.7.1 Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/v1.7.1-ReleaseNotes).
-
-Previous versions
- * [Version 1.7.0](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/cryptsetup-1.7.0.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/cryptsetup-1.7.0.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.7/v1.7.0-ReleaseNotes).
- * [Version 1.6.8](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.8.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.8.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/v1.6.8-ReleaseNotes).
- * [Version 1.6.7](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.7.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.7.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/v1.6.7-ReleaseNotes).
- * [Version 1.6.6](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.6.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.6.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/v1.6.6-ReleaseNotes).
- * [Version 1.6.5](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.5.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.5.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/v1.6.5-ReleaseNotes).
- * [Version 1.6.4](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.4.tar.xz) -
-   [Signature](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/cryptsetup-1.6.4.tar.sign) -
-   [Release Notes](https://www.kernel.org/pub/linux/utils/cryptsetup/v1.6/v1.6.4-ReleaseNotes).
-
-Source and API docs
--------------------
-For development version code, please refer to [source](https://gitlab.com/cryptsetup/cryptsetup/tree/master) page,
-mirror on [kernel.org](https://git.kernel.org/cgit/utils/cryptsetup/cryptsetup.git/) or [GitHub](https://github.com/mbroz/cryptsetup).
-
-For libcryptsetup documentation see [libcryptsetup API](https://gitlab.com/cryptsetup/cryptsetup/wikis/API/index.html) page.
-
-NLS PO files are maintained by [TranslationProject](http://translationproject.org/domain/cryptsetup.html).
-
-Help!
------
-Please always read [FAQ](https://gitlab.com/cryptsetup/cryptsetup/wikis/FrequentlyAskedQuestions) first.
-For cryptsetup and LUKS related questions, please use the dm-crypt mailing list, [dm-crypt@saout.de](mailto:dm-crypt@saout.de).
-
-If you want to subscribe just send an empty mail to [dm-crypt-subscribe@saout.de](mailto:dm-crypt-subscribe@saout.de).
-
-You can also browse [list archive](http://www.saout.de/pipermail/dm-crypt/) or read it through
-[web interface](http://news.gmane.org/gmane.linux.kernel.device-mapper.dm-crypt).
+The disk payload encryption settings can be changed as these options are encrypted.
+If GRUB-cryptomount detects the disk payload encryption settings to be obsolete, it shall warn the user to re-create the DeLUKS header and to re-encrypt the drive with newer presets using cryptsetup. And continue booting.
