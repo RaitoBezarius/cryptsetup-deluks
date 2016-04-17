@@ -35,6 +35,7 @@
 #define DELUKS_HMACSIZE 32
 #define DELUKS_SALTSIZE 32
 #define DELUKS_NUMKEYS 8
+#define DELUKS_HDR_IV_LEN 16
 
 // Minimal number of iterations
 #define DELUKS_MKD_ITERATIONS_MIN  1000
@@ -58,6 +59,10 @@
 /* Offset to keyslot area [in bytes] */
 #define DELUKS_ALIGN_KEYSLOTS 4096
 
+/* Portable uint64_t endianess converter */
+#define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
+#define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+
 /* Any integer values are stored in network byte order on disk and must be
 converted */
 
@@ -76,47 +81,52 @@ struct device_backend;
 //   - Command-line provided options (must be manually provided at mounting)
 // Payload encryption settings (stored in encrypted header) can be different than DELUKS header encryption settings.
 // This structure definition eases compatibility with LUKS codebase
+
+struct deluks_phdr_opt {
+	char		magic[DELUKS_MAGIC_L];          // RANDOM ON DISK
+	uint16_t	version;
+	uint32_t	keyBytes;
+	char		cipherName[DELUKS_CIPHERNAME_L];
+	char		cipherMode[DELUKS_CIPHERMODE_L];
+	uint64_t	payloadOffset;
+	uint64_t	payloadTotalSectors;
+	char		uuid[UUID_STRING_L];
+	uint8_t 	bootPriority;
+	struct __attribute__((__packed__)) {
+		uint32_t active;
+	} keyblock[DELUKS_NUMKEYS];
+	uint8_t  	_padding[347];
+} __attribute__((__packed__));
+
 struct deluks_phdr {
-	char		magic[DELUKS_MAGIC_L];			// RANDOM ON DISK
-	uint16_t	version;						// RANDOM ON DISK
+	char		magic[DELUKS_MAGIC_L];          // RANDOM ON DISK
+	uint16_t	version;                        // RANDOM ON DISK
 	char		cipherName[DELUKS_CIPHERNAME_L];// RANDOM ON DISK
 	char		cipherMode[DELUKS_CIPHERMODE_L];// RANDOM ON DISK
-	char		hashSpec[DELUKS_HASHSPEC_L];	// RANDOM ON DISK
-	uint32_t	payloadOffset;					// RANDOM ON DISK
-	uint32_t	keyBytes;						// RANDOM ON DISK
+	char		hashSpec[DELUKS_HASHSPEC_L];    // RANDOM ON DISK
+	uint64_t	payloadOffset;                  // RANDOM ON DISK
+	uint32_t	keyBytes;                       // RANDOM ON DISK
 	char		mkDigest[DELUKS_DIGESTSIZE];
 	char		mkDigestSalt[DELUKS_SALTSIZE];
-	uint32_t	mkDigestIterations;				// RANDOM ON DISK
-	char		uuid[UUID_STRING_L];			// RANDOM ON DISK
-	uint8_t 	_padding1[344]; /* Special padding instead of keyblock[3] salt at the position of Master Boot Record magic number */
+	uint32_t	mkDigestIterations;             // RANDOM ON DISK
+	char		uuid[UUID_STRING_L];            // RANDOM ON DISK
+	uint8_t 	_padding1[300]; /* Special padding instead of keyblock[3] salt at the position of Master Boot Record magic number */
 
-	/* key blocks, 512 bytes */
-	struct {
-		uint32_t active;						// RANDOM ON DISK
-		uint32_t passwordIterations;			// RANDOM ON DISK
+	/* key information blocks, 512 bytes */
+	struct __attribute__((__packed__)) {
+		uint32_t active;                        // RANDOM ON DISK
+		uint32_t passwordIterations;            // RANDOM ON DISK
 		char     passwordSalt[DELUKS_SALTSIZE];
-		uint32_t keyMaterialOffset;				// RANDOM ON DISK
-		uint32_t stripes;						// RANDOM ON DISK
+		uint64_t keyMaterialOffset;             // RANDOM ON DISK
+		uint32_t stripes;                       // RANDOM ON DISK
 	} keyblock[DELUKS_NUMKEYS];
-    uint8_t _padding2[128];
+    uint8_t _padding2[96];
 
 	/* encrypted part, 512 bytes */
-	// TODO: NOT YET IMPLEMENTED
-	struct __attribute__((__packed__)) {
-		uint16_t	version;
-		uint32_t	payloadTruncatedKeyBytes;
-		char		payloadCipherName[DELUKS_CIPHERNAME_L];
-		char		payloadCipherMode[DELUKS_CIPHERMODE_L];
-		uint64_t	payloadOffset;
-		uint64_t	payloadTotalSectors;
-		char		uuid[UUID_STRING_L];
-    	uint8_t 	bootPriority;
-		struct {
-			uint32_t active;
-		} keyblock[DELUKS_NUMKEYS];
-		uint8_t  	_padding3[97];
-	} options;
-};
+	struct deluks_phdr_opt options;
+} __attribute__((__packed__));
+
+
 
 int DELUKS_verify_volume_key(const struct deluks_phdr *hdr,
 			   const struct volume_key *vk);
@@ -166,6 +176,7 @@ int DELUKS_hdr_restore(
 
 int DELUKS_write_phdr(
 	struct deluks_phdr *hdr,
+	const struct volume_key *vk,
 	struct crypt_device *ctx);
 
 int DELUKS_set_key(

@@ -6,13 +6,19 @@ CRYPTSETUP_1.0 {
 		crypt_set_log_callback;
 		crypt_set_confirm_callback;
 		crypt_set_iteration_time;
+		crypt_get_iteration_time;
 		crypt_set_iteration_num;
+		crypt_get_iteration_num;
 		crypt_set_boot_priority;
+		crypt_get_boot_priority;
 		crypt_set_options_cipher;
+		crypt_get_options_cipher;
 		crypt_set_options_cipher_mode;
+		crypt_get_options_cipher_mode;
 		crypt_set_key_size;
+		crypt_get_key_size;
 		crypt_set_hash_spec;
-
+		crypt_get_hash_spec;
 		crypt_set_uuid;
 		crypt_set_data_device;
 

@@ -1086,7 +1086,7 @@ static int _crypt_format_deluks1(struct crypt_device *cd,
 		return r;
 	}
 
-	r = DELUKS_write_phdr(&cd->u.deluks1.hdr, cd);
+	r = DELUKS_write_phdr(&cd->u.deluks1.hdr, cd->volume_key, cd);
 
 	return r;
 }
@@ -1307,6 +1307,7 @@ int crypt_load(struct crypt_device *cd,
 
 		r = _crypt_load_luks1(cd, 1, 0);
 	} else if (isDELUKS(requested_type)) {
+
 		if (cd->type && !isDELUKS(cd->type)) {
 			log_dbg("Context is already initialised to type %s", cd->type);
 			return -EINVAL;
@@ -1998,6 +1999,14 @@ int crypt_activate_by_passphrase(struct crypt_device *cd,
 			if (name)
 				r = LUKS1_activate(cd, name, vk, flags);
 		}
+	} else if (isDELUKS(cd->type)) {
+		r = DELUKS_open_key_with_hdr(keyslot, passphrase,
+					   passphrase_size, &cd->u.deluks1.hdr, &vk, cd);
+		if (r >= 0) {
+			keyslot = r;
+			if (name)
+				r = DELUKS1_activate(cd, name, vk, flags);
+		}
 	} else
 		r = -EINVAL;
 out:
@@ -2164,6 +2173,27 @@ int crypt_activate_by_volume_key(struct crypt_device *cd,
 
 		if (!r && name)
 			r = LUKS1_activate(cd, name, vk, flags);
+	} else if (isDELUKS(cd->type)) {
+		/* If key is not provided, try to use internal key */
+		if (!volume_key) {
+			if (!cd->volume_key) {
+				log_err(cd, _("Volume key does not match the volume.\n"));
+				return -EINVAL;
+			}
+			volume_key_size = cd->volume_key->keylength;
+			volume_key = cd->volume_key->key;
+		}
+
+		vk = crypt_alloc_volume_key(volume_key_size, volume_key);
+		if (!vk)
+			return -ENOMEM;
+		r = DELUKS_verify_volume_key(&cd->u.deluks1.hdr, vk);
+
+		if (r == -EPERM)
+			log_err(cd, _("Volume key does not match the volume.\n"));
+
+		if (!r && name)
+			r = DELUKS1_activate(cd, name, vk, flags);
 	} else if (isVERITY(cd->type)) {
 		/* volume_key == root hash */
 		if (!volume_key || !volume_key_size) {
@@ -2318,16 +2348,31 @@ void crypt_set_iteration_time(struct crypt_device *cd, uint64_t iteration_time_m
 	cd->iteration_time = iteration_time_ms;
 }
 
+uint64_t crypt_get_iteration_time(struct crypt_device *cd)
+{
+	return cd->iteration_time;
+}
+
 void crypt_set_iteration_num(struct crypt_device *cd, uint32_t iteration_num)
 {
 	log_dbg("Iteration number set to %" PRIu32 ".", iteration_num);
 	cd->u.deluks1.iteration_num = iteration_num;
 }
 
-void crypt_set_boot_priority(struct crypt_device *cd, uint32_t boot_priority)
+uint32_t crypt_get_iteration_num(struct crypt_device *cd)
 {
-	log_dbg("Boot priority set to %" PRIu32 ".", boot_priority);
+	return cd->u.deluks1.iteration_num;
+}
+
+void crypt_set_boot_priority(struct crypt_device *cd, uint8_t boot_priority)
+{
+	log_dbg("Boot priority set to %" PRIu8 ".", boot_priority);
 	cd->u.deluks1.boot_priority = boot_priority;
+}
+
+uint8_t crypt_get_boot_priority(struct crypt_device *cd)
+{
+	return cd->u.deluks1.boot_priority;
 }
 
 void crypt_set_options_cipher(struct crypt_device *cd, const char *options_cipher)
@@ -2336,10 +2381,20 @@ void crypt_set_options_cipher(struct crypt_device *cd, const char *options_ciphe
 	cd->u.deluks1.options_cipher = strdup(options_cipher);
 }
 
+const char * crypt_get_options_cipher(struct crypt_device *cd)
+{
+	return cd->u.deluks1.options_cipher;
+}
+
 void crypt_set_options_cipher_mode(struct crypt_device *cd, const char *options_cipher_mode)
 {
 	log_dbg("Cipher mode set to %s.", options_cipher_mode);
 	cd->u.deluks1.options_cipher_mode = strdup(options_cipher_mode);
+}
+
+const char * crypt_get_options_cipher_mode(struct crypt_device *cd)
+{
+	return cd->u.deluks1.options_cipher_mode;
 }
 
 void crypt_set_key_size(struct crypt_device *cd, uint32_t key_size)
@@ -2348,10 +2403,20 @@ void crypt_set_key_size(struct crypt_device *cd, uint32_t key_size)
 	cd->u.deluks1.key_size = key_size;
 }
 
+uint32_t crypt_get_key_size(struct crypt_device *cd)
+{
+	return cd->u.deluks1.key_size;
+}
+
 void crypt_set_hash_spec(struct crypt_device *cd, char *hash_spec)
 {
 	log_dbg("Hash spec set to %s.", hash_spec);
 	cd->u.deluks1.hash_spec = strdup(hash_spec);
+}
+
+char * crypt_get_hash_spec(struct crypt_device *cd)
+{
+	return cd->u.deluks1.hash_spec;
 }
 
 void crypt_set_rng_type(struct crypt_device *cd, int rng_type)
@@ -2461,10 +2526,10 @@ static int _deluks_dump(struct crypt_device *cd)
 
 	log_std(cd, "DELUKS header information for %s\n\n", mdata_device_path(cd));
 	log_std(cd, "Version:       \t%" PRIu16 "\n", cd->u.deluks1.hdr.version);
-	log_std(cd, "Cipher name:   \t%s\n", cd->u.deluks1.hdr.cipherName);
-	log_std(cd, "Cipher mode:   \t%s\n", cd->u.deluks1.hdr.cipherMode);
-	log_std(cd, "Hash spec:     \t%s\n", cd->u.deluks1.hdr.hashSpec);
-	log_std(cd, "Payload offset:\t%" PRIu32 "\n", cd->u.deluks1.hdr.payloadOffset);
+	log_std(cd, "Cipher name:   \t%.*s\n", DELUKS_CIPHERNAME_L, cd->u.deluks1.hdr.cipherName);
+	log_std(cd, "Cipher mode:   \t%.*s\n", DELUKS_CIPHERMODE_L, cd->u.deluks1.hdr.cipherMode);
+	log_std(cd, "Hash spec:     \t%.*s\n", DELUKS_HASHSPEC_L, cd->u.deluks1.hdr.hashSpec);
+	log_std(cd, "Payload offset:\t%" PRIu64 "\n", cd->u.deluks1.hdr.payloadOffset);
 	log_std(cd, "MK bits:       \t%" PRIu32 "\n", cd->u.deluks1.hdr.keyBytes * 8);
 	log_std(cd, "MK digest:     \t");
 	hexprint(cd, cd->u.deluks1.hdr.mkDigest, LUKS_DIGESTSIZE, " ");
@@ -2475,7 +2540,8 @@ static int _deluks_dump(struct crypt_device *cd)
 	hexprint(cd, cd->u.deluks1.hdr.mkDigestSalt+LUKS_SALTSIZE/2, LUKS_SALTSIZE/2, " ");
 	log_std(cd, "\n");
 	log_std(cd, "MK iterations: \t%" PRIu32 "\n", cd->u.deluks1.hdr.mkDigestIterations);
-	log_std(cd, "UUID:          \t%s\n\n", cd->u.deluks1.hdr.uuid);
+	log_std(cd, "UUID:          \t%.*s\n", UUID_STRING_L, cd->u.deluks1.hdr.uuid);
+	log_std(cd, "Boot Priority: \t%" PRIu8 "\n\n", cd->u.deluks1.hdr.options.bootPriority);
 	for(i = 0; i < LUKS_NUMKEYS; i++) {
 		if(cd->u.deluks1.hdr.keyblock[i].active == LUKS_KEY_ENABLED) {
 			log_std(cd, "Key Slot %d: ENABLED\n",i);
@@ -2489,13 +2555,13 @@ static int _deluks_dump(struct crypt_device *cd)
 				 LUKS_SALTSIZE/2, LUKS_SALTSIZE/2, " ");
 			log_std(cd, "\n");
 
-			log_std(cd, "\tKey material offset:\t%" PRIu32 "\n",
+			log_std(cd, "\tKey material offset:\t%" PRIu64 "\n",
 				cd->u.deluks1.hdr.keyblock[i].keyMaterialOffset);
 			log_std(cd, "\tAF stripes:            \t%" PRIu32 "\n",
 				cd->u.deluks1.hdr.keyblock[i].stripes);
 		}
 		else 
-			log_std(cd, "Key Slot %d: DISABLED\n", i);
+			log_std(cd, "Key Slot %d: DISABLED (%#" PRIx32 ")\n", i, cd->u.deluks1.hdr.keyblock[i].active);
 	}
 	return 0;
 }
@@ -2527,6 +2593,8 @@ int crypt_dump(struct crypt_device *cd)
 {
 	if (isLUKS(cd->type))
 		return _luks_dump(cd);
+	else if (isDELUKS(cd->type))
+		return _deluks_dump(cd);
 	else if (isVERITY(cd->type))
 		return _verity_dump(cd);
 	else if (isTCRYPT(cd->type))

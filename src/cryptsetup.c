@@ -48,8 +48,8 @@ static uint64_t opt_offset = 0;
 static uint64_t opt_skip = 0;
 static int opt_skip_valid = 0;
 static int opt_readonly = 0;
-static int opt_iteration_time = DEFAULT_LUKS1_ITER_TIME;
-static int opt_iteration_num = DEFAULT_DELUKS1_ITER_NUM;
+static int opt_iteration_time = 0;
+static int opt_iteration_num = 0;
 static int opt_version_mode = 0;
 static int opt_timeout = 0;
 static int opt_tries = 3;
@@ -66,7 +66,7 @@ static int opt_tcrypt_hidden = 0;
 static int opt_tcrypt_system = 0;
 static int opt_tcrypt_backup = 0;
 static int opt_veracrypt = 0;
-static int opt_boot_priority = 0;
+static uint8_t opt_boot_priority = 0;
 
 static const char **action_argv;
 static int action_argc;
@@ -725,6 +725,9 @@ static int action_luksFormat(void)
 
 	if (opt_iteration_time)
 		crypt_set_iteration_time(cd, opt_iteration_time);
+	else
+		crypt_set_iteration_time(cd, DEFAULT_LUKS1_ITER_TIME);
+
 
 	if (opt_random)
 		crypt_set_rng_type(cd, CRYPT_RNG_RANDOM);
@@ -816,10 +819,13 @@ static int action_deluksFormat(void)
 	if (opt_iteration_time) {
 		crypt_set_iteration_num(cd, 0);
 		crypt_set_iteration_time(cd, opt_iteration_time);
-	}
+	} else
+		crypt_set_iteration_time(cd, DEFAULT_DELUKS1_ITER_TIME);
 
 	if (opt_iteration_num)
 		crypt_set_iteration_num(cd, opt_iteration_num);
+	else
+		crypt_set_iteration_num(cd, DEFAULT_DELUKS1_ITER_NUM);
 
 	if (opt_random)
 		crypt_set_rng_type(cd, CRYPT_RNG_RANDOM);
@@ -887,6 +893,8 @@ static int action_open_luks(void)
 
 	if (opt_iteration_time)
 		crypt_set_iteration_time(cd, opt_iteration_time);
+	else
+		crypt_set_iteration_time(cd, DEFAULT_LUKS1_ITER_TIME);
 
 	_set_activation_flags(&activate_flags);
 
@@ -933,6 +941,33 @@ static int action_open_deluks(void)
 	if ((r = crypt_init(&cd, header_device)))
 		goto out;
 
+	if (opt_iteration_time)
+		crypt_set_iteration_time(cd, opt_iteration_time);
+	else
+		crypt_set_iteration_time(cd, DEFAULT_DELUKS1_ITER_TIME);
+
+	if (opt_iteration_num)
+		crypt_set_iteration_num(cd, opt_iteration_num);
+	else
+		crypt_set_iteration_num(cd, DEFAULT_DELUKS1_ITER_NUM);
+
+	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
+				      cipher, NULL, cipher_mode);
+
+	if (r < 0) {
+		log_err(_("No known cipher specification pattern detected.\n"));
+		goto out;
+	}
+	
+	crypt_set_options_cipher(cd, cipher);
+
+	crypt_set_options_cipher_mode(cd, cipher_mode);
+
+	crypt_set_key_size(cd, opt_key_size ? opt_key_size / 8 : DEFAULT_DELUKS1_KEYBITS / 8);
+
+	hash_spec = opt_hash?strdup(opt_hash):strdup(DEFAULT_DELUKS1_HASH);
+	crypt_set_hash_spec(cd, hash_spec);
+
 	if ((r = crypt_load(cd, CRYPT_DELUKS1, NULL)))
 		goto out;
 
@@ -945,24 +980,6 @@ static int action_open_deluks(void)
 		r = -EINVAL;
 		goto out;
 	}
-	if (opt_iteration_time)
-		crypt_set_iteration_time(cd, opt_iteration_time);
-
-	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
-				      cipher, NULL, cipher_mode);
-	if (r < 0) {
-		log_err(_("No known cipher specification pattern detected.\n"));
-		goto out;
-	}
-
-	crypt_set_options_cipher(cd, cipher);
-
-	crypt_set_options_cipher_mode(cd, cipher_mode);
-
-	crypt_set_key_size(cd, opt_key_size ? opt_key_size / 8 : DEFAULT_DELUKS1_KEYBITS / 8);
-
-	hash_spec = strdup(opt_hash)?:strdup(DEFAULT_DELUKS1_HASH);
-	crypt_set_hash_spec(cd, hash_spec);
 
 	_set_activation_flags(&activate_flags);
 
@@ -1152,6 +1169,8 @@ static int action_luksAddKey(void)
 	keysize = crypt_get_volume_key_size(cd);
 	if (opt_iteration_time)
 		crypt_set_iteration_time(cd, opt_iteration_time);
+	else
+		crypt_set_iteration_time(cd, DEFAULT_LUKS1_ITER_TIME);
 
 	if (opt_master_key_file) {
 		r = _read_mk(opt_master_key_file, &key, keysize);
@@ -1233,6 +1252,8 @@ static int action_luksChangeKey(void)
 
 	if (opt_iteration_time)
 		crypt_set_iteration_time(cd, opt_iteration_time);
+	else
+		crypt_set_iteration_time(cd, DEFAULT_LUKS1_ITER_TIME);
 
 	r = tools_get_key(_("Enter passphrase to be changed: "),
 		      &password, &password_size,
@@ -1405,6 +1426,98 @@ static int action_luksDump(void)
 out:
 	crypt_free(cd);
 	return r;
+}
+
+static int action_deluksDump(void)
+{
+	struct crypt_device *cd = NULL;
+	char *hash_spec;
+	char cipher[MAX_CIPHER_LEN], cipher_mode[MAX_CIPHER_LEN];
+	char *vk = NULL, *password = NULL;
+	size_t passwordLen = 0;
+	size_t vk_size;
+	unsigned i;
+	int r;
+
+	if ((r = crypt_init(&cd, uuid_or_device_header(NULL))))
+		goto out;
+
+	if (opt_iteration_num)
+		crypt_set_iteration_num(cd, opt_iteration_num);
+	else
+		crypt_set_iteration_num(cd, DEFAULT_DELUKS1_ITER_NUM);
+
+	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
+				      cipher, NULL, cipher_mode);
+
+	if (r < 0) {
+		log_err(_("No known cipher specification pattern detected.\n"));
+		goto out;
+	}
+	
+	crypt_set_options_cipher(cd, cipher);
+
+	crypt_set_options_cipher_mode(cd, cipher_mode);
+
+	crypt_set_key_size(cd, opt_key_size ? opt_key_size / 8 : DEFAULT_DELUKS1_KEYBITS / 8);
+
+	hash_spec = opt_hash?strdup(opt_hash):strdup(DEFAULT_DELUKS1_HASH);
+	crypt_set_hash_spec(cd, hash_spec);
+
+	if ((r = crypt_load(cd, CRYPT_DELUKS1, NULL)))
+		goto out;
+
+	if (opt_dump_master_key) {
+		crypt_set_confirm_callback(cd, yesDialog, NULL);
+		if (!yesDialog(
+		    _("Header dump with volume key is sensitive information\n"
+		      "which allows access to encrypted partition without passphrase.\n"
+		      "This dump should be always stored encrypted on safe place."),
+		      NULL))
+			return -EPERM;
+	}
+
+	vk_size = crypt_get_volume_key_size(cd);
+	vk = crypt_safe_alloc(vk_size);
+	if (!vk)
+		return -ENOMEM;
+
+	r = tools_get_key(_("Enter passphrase: "), &password, &passwordLen,
+			  opt_keyfile_offset, opt_keyfile_size, opt_key_file,
+			  opt_timeout, 0, 0, cd);
+	if (r < 0)
+		goto out2;
+
+	r = crypt_volume_key_get(cd, CRYPT_ANY_SLOT, vk, &vk_size,
+				 password, passwordLen);
+	check_signal(&r);
+	if (r < 0)
+		goto out2;
+
+	crypt_dump(cd);
+
+	if (opt_dump_master_key) {
+		log_std("MK dump:\t");
+
+		for(i = 0; i < vk_size; i++) {
+			if (i && !(i % 16))
+				log_std("\n\t\t");
+			log_std("%02hhx ", (char)vk[i]);
+		}
+		log_std("\n");
+	}
+
+	goto out2;
+
+out:
+	crypt_free(cd);
+	return r;
+
+out2:
+	crypt_safe_free(password);
+	crypt_safe_free(vk);
+	crypt_free(cd);
+	return r;	
 }
 
 static int action_luksSuspend(void)
@@ -1585,8 +1698,9 @@ static struct action_type {
 	{ "luksKillSlot", action_luksKillSlot, 2, 1, N_("<device> <key slot>"), N_("wipes key with number <key slot> from LUKS device") },
 	{ "luksUUID",     action_luksUUID,     1, 0, N_("<device>"), N_("print UUID of LUKS device") },
 	{ "isLuks",       action_isLuks,       1, 0, N_("<device>"), N_("tests <device> for LUKS partition header") },
-	{ "isDeLuks",     action_isDeLuks,     1, 0, N_("<device>"), N_("tests <device> for DELUKS partition header") },
+	{ "isDeLuks",     action_isDeLuks,     1, 0, N_("<device>"), N_("tests <device> for DeLUKS partition header") },
 	{ "luksDump",     action_luksDump,     1, 1, N_("<device>"), N_("dump LUKS partition information") },
+	{ "deluksDump",   action_deluksDump,   1, 1, N_("<device>"), N_("dump DeLUKS partition information") },
 	{ "tcryptDump",   action_tcryptDump,   1, 1, N_("<device>"), N_("dump TCRYPT device information") },
 	{ "luksSuspend",  action_luksSuspend,  1, 1, N_("<device>"), N_("Suspend LUKS device and wipe key (all IOs are frozen).") },
 	{ "luksResume",   action_luksResume,   1, 1, N_("<device>"), N_("Resume suspended LUKS device.") },
@@ -1726,7 +1840,7 @@ int main(int argc, const char **argv)
 		{ "tcrypt-system",     '\0', POPT_ARG_NONE, &opt_tcrypt_system,         0, N_("Device is system TCRYPT drive (with bootloader)."), NULL },
 		{ "tcrypt-backup",     '\0', POPT_ARG_NONE, &opt_tcrypt_backup,         0, N_("Use backup (secondary) TCRYPT header."), NULL },
 		{ "veracrypt",         '\0', POPT_ARG_NONE, &opt_veracrypt,             0, N_("Scan also for VeraCrypt compatible device."), NULL },
-		{ "type",               'M', POPT_ARG_STRING, &opt_type,                0, N_("Type of device metadata: luks, plain, loopaes, tcrypt."), NULL },
+		{ "type",               'M', POPT_ARG_STRING, &opt_type,                0, N_("Type of device metadata: luks, deluks, plain, loopaes, tcrypt."), NULL },
 		{ "force-password",    '\0', POPT_ARG_NONE, &opt_force_password,        0, N_("Disable password quality check (if enabled)."), NULL },
 		{ "perf-same_cpu_crypt",'\0', POPT_ARG_NONE, &opt_perf_same_cpu_crypt,  0, N_("Use dm-crypt same_cpu_crypt performance compatibility option."), NULL },
 		{ "perf-submit_from_crypt_cpus",'\0', POPT_ARG_NONE, &opt_perf_submit_from_crypt_cpus,0,N_("Use dm-crypt submit_from_crypt_cpus performance compatibility option."), NULL },

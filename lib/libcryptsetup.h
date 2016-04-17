@@ -163,6 +163,7 @@ void crypt_set_confirm_callback(struct crypt_device *cd,
  * @param iteration_time_ms the time in ms
  */
 void crypt_set_iteration_time(struct crypt_device *cd, uint64_t iteration_time_ms);
+uint64_t crypt_get_iteration_time(struct crypt_device *cd);
 
 /**
  * Set the number of iterations for PBKDF2 for DELUKS.
@@ -171,6 +172,8 @@ void crypt_set_iteration_time(struct crypt_device *cd, uint64_t iteration_time_m
  * @param iteration_num the number of iterations
  */
 void crypt_set_iteration_num(struct crypt_device *cd, uint32_t iteration_num);
+// Avoids rewriting a DELUKS keymanage.c functions by using *get*() instead of function arguments
+uint32_t crypt_get_iteration_num(struct crypt_device *cd);
 
 /**
  * Set if the DELUKS mount is bootable.
@@ -179,19 +182,24 @@ void crypt_set_iteration_num(struct crypt_device *cd, uint32_t iteration_num);
  * @param cd crypt device handle
  * @param boot_priority the boot priority
  */
-void crypt_set_boot_priority(struct crypt_device *cd, uint32_t boot_priority);
+void crypt_set_boot_priority(struct crypt_device *cd, uint8_t boot_priority);
+uint8_t crypt_get_boot_priority(struct crypt_device *cd);
 
 // TODO: Description
 void crypt_set_options_cipher(struct crypt_device *cd, const char *options_cipher);
+const char * crypt_get_options_cipher(struct crypt_device *cd);
 
 // TODO: Description
 void crypt_set_options_cipher_mode(struct crypt_device *cd, const char *options_cipher_mode);
+const char * crypt_get_options_cipher_mode(struct crypt_device *cd);
 
-// TODO: Description
+// Set Master Key size in BYTES
 void crypt_set_key_size(struct crypt_device *cd, uint32_t key_size);
+uint32_t crypt_get_key_size(struct crypt_device *cd);
 
 // TODO: Description
 void crypt_set_hash_spec(struct crypt_device *cd, char *hash_spec);
+char * crypt_get_hash_spec(struct crypt_device *cd);
 
 /**
  * Set data device

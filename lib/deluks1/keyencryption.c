@@ -25,6 +25,7 @@
 #include <errno.h>
 #include "deluks.h"
 #include "internal.h"
+#include "crypto_backend.h"
 
 static void _error_hint(struct crypt_device *ctx, const char *device,
 			const char *cipher, const char *mode, size_t keyLength)

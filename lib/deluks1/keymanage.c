@@ -102,7 +102,7 @@ static int DELUKS_check_keyslot_size(const struct deluks_phdr *phdr, unsigned in
 
 	/* First sectors is the header itself */
 	if (phdr->keyblock[keyIndex].keyMaterialOffset * SECTOR_SIZE < sizeof(*phdr)) {
-		log_dbg("Invalid offset %u in keyslot %u.",
+		log_dbg("Invalid offset %" PRIu64 " in keyslot %u.",
 			phdr->keyblock[keyIndex].keyMaterialOffset, keyIndex);
 		return 1;
 	}
@@ -112,7 +112,7 @@ static int DELUKS_check_keyslot_size(const struct deluks_phdr *phdr, unsigned in
 		return 0;
 
 	if (phdr->payloadOffset <= phdr->keyblock[keyIndex].keyMaterialOffset) {
-		log_dbg("Invalid offset %u in keyslot %u (beyond data area offset %u).",
+		log_dbg("Invalid offset %" PRIu64 " in keyslot %u (beyond data area offset %" PRIu64 ").",
 			phdr->keyblock[keyIndex].keyMaterialOffset, keyIndex,
 			phdr->payloadOffset);
 		return 1;
@@ -121,8 +121,8 @@ static int DELUKS_check_keyslot_size(const struct deluks_phdr *phdr, unsigned in
 	secs_per_stripes = AF_split_sectors(phdr->keyBytes, phdr->keyblock[keyIndex].stripes);
 
 	if (phdr->payloadOffset < (phdr->keyblock[keyIndex].keyMaterialOffset + secs_per_stripes)) {
-		log_dbg("Invalid keyslot size %u (offset %u, stripes %u) in "
-			"keyslot %u (beyond data area offset %u).",
+		log_dbg("Invalid keyslot size %u (offset %" PRIu64 ", stripes %u) in "
+			"keyslot %u (beyond data area offset %" PRIu64 ").",
 			secs_per_stripes,
 			phdr->keyblock[keyIndex].keyMaterialOffset,
 			phdr->keyblock[keyIndex].stripes,
@@ -146,6 +146,121 @@ static const char *dbg_slot_state(crypt_keyslot_info ki)
 	default:
 		return "INVALID";
 	}
+}
+
+/* Decrypt the options sub-header */
+static int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
+		  struct deluks_phdr_opt *hdr_opt_out,
+		  struct volume_key *vk,
+		  const char *cipher_name,
+		  const char *cipher_mode,
+		  struct crypt_device *ctx)
+{
+	int		iv_offset=16;
+	char	iv[DELUKS_HDR_IV_LEN] = {};
+	struct	crypt_cipher *cipher;
+	char	*buf_in  = (char*)&hdr->options;
+	char	*buf_out = (char*)hdr_opt_out;
+	int i, r;
+	char *c;
+	char cipher_mode_direct[DELUKS_CIPHERMODE_L];
+
+	/* Remove IV name from cipher mode name if present */
+	strncpy(cipher_mode_direct, cipher_mode, MAX_CIPHER_LEN);
+	c = strchr(cipher_mode_direct, '-');
+	if (c)
+		*c = '\0';
+
+	/* Derive options header secret IV from master key */
+	memcpy(iv, &vk->key[iv_offset], DELUKS_HDR_IV_LEN);
+
+	/* Initialize cipher struct */
+	r = crypt_cipher_init(&cipher, cipher_name, cipher_mode_direct,
+			      vk->key, vk->keylength);
+
+	if (!r) {
+		/* Decrypt options header */
+		r = crypt_cipher_decrypt(cipher, buf_in, buf_out, sizeof(*hdr_opt_out),
+					 iv, DELUKS_HDR_IV_LEN);
+
+		crypt_cipher_destroy(cipher);
+
+		/* Clean options sub-header endianess and strings & copy to real header */
+		memcpy(hdr->magic, hdr_opt_out->magic, DELUKS_MAGIC_L);
+		// TODO: Validate magic
+		//log_dbg("<<DEBUG>> %s:%d magic=%.*s", __FILE__,__LINE__,DELUKS_MAGIC_L,hdr_opt_out->magic);
+		hdr->version	= hdr_opt_out->version	= ntohs(hdr_opt_out->version);
+		hdr->keyBytes	= hdr_opt_out->keyBytes = ntohl(hdr_opt_out->keyBytes);
+		hdr_opt_out->cipherName[DELUKS_CIPHERNAME_L - 1] = '\0';
+		memcpy(hdr->cipherName, hdr_opt_out->cipherName, DELUKS_CIPHERNAME_L);
+		hdr_opt_out->cipherMode[DELUKS_CIPHERMODE_L - 1] = '\0';		
+		memcpy(hdr->cipherMode, hdr_opt_out->cipherMode, DELUKS_CIPHERMODE_L);
+		hdr->payloadOffset	= hdr_opt_out->payloadOffset = ntohll(hdr_opt_out->payloadOffset);
+		hdr_opt_out->payloadTotalSectors = ntohll(hdr_opt_out->payloadTotalSectors);
+		hdr_opt_out->uuid[UUID_STRING_L - 1] = '\0';
+		memcpy(hdr->uuid, hdr_opt_out->uuid, UUID_STRING_L);
+		crypt_set_boot_priority(ctx, hdr_opt_out->bootPriority);
+
+		for(i = 0; i < DELUKS_NUMKEYS; ++i) {
+
+			hdr->keyblock[i].active = hdr_opt_out->keyblock[i].active = ntohl(hdr_opt_out->keyblock[i].active);
+			if (DELUKS_check_keyslot_size(hdr, i)) {
+				log_err(ctx, _("LUKS keyslot %u is invalid.\n"), i);
+				r = -EINVAL;
+			}
+		}
+	}
+
+	crypt_memzero(iv, DELUKS_HDR_IV_LEN);
+	return r;
+}
+
+/* Decrypt the options sub-header */
+static int DELUKS_encrypt_hdr_opt(struct deluks_phdr *hdr,
+		  struct deluks_phdr_opt *hdr_opt_out,
+		  const struct volume_key *vk,
+		  const char *cipher_name,
+		  const char *cipher_mode,
+		  struct crypt_device *ctx)
+{
+	int		iv_offset=16;
+	char	iv[DELUKS_HDR_IV_LEN] = {};
+	struct	crypt_cipher *cipher;
+	char	*buf_in  = (char*)&hdr->options;
+	char	*buf_out = (char*)hdr_opt_out;
+	int r;
+	char *c;
+	char cipher_mode_direct[DELUKS_CIPHERMODE_L];
+
+
+	/* Remove IV name from cipher mode name if present */
+	strncpy(cipher_mode_direct, cipher_mode, MAX_CIPHER_LEN);
+	c = strchr(cipher_mode_direct, '-');
+	if (c)
+		*c = '\0';
+
+	/* Derive options header secret IV from master key */
+	/* WARNING: Modifying the encrypted options header requires changing the MK salt to avoid watermaking attacks */
+	memcpy(iv, &vk->key[iv_offset], DELUKS_HDR_IV_LEN);
+
+	/* Initialize cipher struct */
+	r = crypt_cipher_init(&cipher, cipher_name, cipher_mode_direct,
+			      vk->key, vk->keylength);
+
+	if (!r) {
+		/* Decrypt options header */
+		r = crypt_cipher_encrypt(cipher, buf_in, buf_out, sizeof(*hdr_opt_out),
+					 iv, DELUKS_HDR_IV_LEN);
+	for (size_t i = 0; i < 512; ++i) printf("%hhX ", buf_out[i]); printf("\n");
+		crypt_cipher_destroy(cipher);
+
+		/* Convert */
+		// Done in caller: DELUKS_write_phdr()
+
+	}
+
+	crypt_memzero(iv, DELUKS_HDR_IV_LEN);
+	return r;
 }
 
 int DELUKS_hdr_backup(const char *backup_file, struct crypt_device *ctx)
@@ -396,7 +511,7 @@ static int _keyslot_repair(struct deluks_phdr *phdr, struct crypt_device *ctx)
 
 	if (need_write) {
 		log_verbose(ctx, _("Writing DELUKS header to disk.\n"));
-		r = DELUKS_write_phdr(phdr, ctx);
+		r = DELUKS_write_phdr(phdr, NULL, ctx); // TEMP UNSUPPORTED
 	}
 out:
 	crypt_free_volume_key(vk);
@@ -412,24 +527,43 @@ static int _check_and_convert_hdr(const char *device,
 {
 	int r = 0;
 	unsigned int i;
+	size_t blocksPerStripeSet, currentSector;
+	uuid_t partitionUuid;
+	// TODO: Support animal keyword
 
-	hdr->hashSpec[DELUKS_HASHSPEC_L - 1] = '\0';
-	if (crypt_hmac_size(hdr->hashSpec) < DELUKS_DIGESTSIZE) {
-		log_err(ctx, _("Requested DELUKS hash %s is not supported.\n"), hdr->hashSpec);
+	if (crypt_hmac_size(crypt_get_hash_spec(ctx)) < DELUKS_DIGESTSIZE) {
+		log_err(ctx, _("Requested DELUKS hash %s is not supported.\n"), crypt_get_hash_spec(ctx));
 		return -EINVAL;
 	}
 
 	/* Header detected */
-	hdr->payloadOffset      = ntohl(hdr->payloadOffset);
-	hdr->keyBytes           = ntohl(hdr->keyBytes);
-	hdr->mkDigestIterations = ntohl(hdr->mkDigestIterations);
+	uuid_generate(partitionUuid);	// TODO: Manage passed arguments
+	uuid_unparse(partitionUuid, hdr->uuid);	// TODO: Manage passed arguments
 
+	// TODO: Put crypt_get_hash_spec(ctx) & other in header
+	hdr->payloadOffset      = DEFAULT_DISK_ALIGNMENT / SECTOR_SIZE; // TODO: Get real value from decrypted header
+	hdr->keyBytes           = crypt_get_key_size(ctx);
+	hdr->mkDigestIterations = crypt_get_iteration_num(ctx);
+
+	// Temporary, indeed these fields represent the payload encryption settings, not the options sub-header encryption settings.
+	memcpy(hdr->cipherName, crypt_get_options_cipher(ctx), DELUKS_CIPHERNAME_L);
+	memcpy(hdr->cipherMode, crypt_get_options_cipher_mode(ctx), DELUKS_CIPHERMODE_L);
+	memcpy(hdr->hashSpec, crypt_get_hash_spec(ctx), DELUKS_HASHSPEC_L);
+
+	hdr->version            = 1;
+
+	currentSector = DELUKS_ALIGN_KEYSLOTS / SECTOR_SIZE;
+	blocksPerStripeSet = AF_split_sectors(crypt_get_key_size(ctx), DELUKS_STRIPES);
 	for(i = 0; i < DELUKS_NUMKEYS; ++i) {
-		hdr->keyblock[i].active             = ntohl(hdr->keyblock[i].active);
-		hdr->keyblock[i].passwordIterations = ntohl(hdr->keyblock[i].passwordIterations);
-		hdr->keyblock[i].keyMaterialOffset  = ntohl(hdr->keyblock[i].keyMaterialOffset);
-		hdr->keyblock[i].stripes            = ntohl(hdr->keyblock[i].stripes);
-		hdr->options.keyblock[i].active     = ntohl(hdr->keyblock[i].active);
+		hdr->keyblock[i].active             = DELUKS_KEY_ENABLED;
+		hdr->keyblock[i].passwordIterations = crypt_get_iteration_num(ctx);
+		hdr->keyblock[i].keyMaterialOffset  = currentSector;
+		hdr->keyblock[i].stripes            = DELUKS_STRIPES;
+		//hdr->options.keyblock[i].active     = hdr->keyblock[i].active;
+
+		currentSector = size_round_up(currentSector + blocksPerStripeSet,
+						DELUKS_ALIGN_KEYSLOTS / SECTOR_SIZE);
+		hdr->payloadOffset = currentSector;
 		if (DELUKS_check_keyslot_size(hdr, i)) {
 			log_err(ctx, _("DELUKS keyslot %u is invalid.\n"), i);
 			r = -EINVAL;
@@ -447,6 +581,16 @@ static int _check_and_convert_hdr(const char *device,
 		else
 			log_verbose(ctx, _("No known problems detected for DELUKS header.\n"));
 	}
+
+	// TODO: Replace by checksum check
+	/*
+	if(memcmp(hdr->magic, luksMagic, LUKS_MAGIC_L)) {
+		log_dbg("LUKS header not detected.");
+		if (require_luks_device)
+			log_err(ctx, _("Device %s is not a valid DELUKS device.\n"), device);
+		return -EINVAL;
+	}
+	*/
 
 	return r;
 }
@@ -552,6 +696,7 @@ int DELUKS_read_phdr(struct deluks_phdr *hdr,
 }
 
 int DELUKS_write_phdr(struct deluks_phdr *hdr,
+			const struct volume_key *vk,
 		    struct crypt_device *ctx)
 {
 	struct device *device = crypt_metadata_device(ctx);
@@ -560,15 +705,23 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 	unsigned int i;
 	struct deluks_phdr convHdr;
 	int r;
+	uint64_t dev_sectors;
 
-	log_dbg("Updating DELUKS header of size %zu on device %s",
+	log_dbg("Updating DeLUKS header of size %zu on device %s",
 		sizeof(struct deluks_phdr), device_path(device));
 
-
+	if (!vk) {
+		log_err(ctx, _("Function not implemented.\n"));
+		return -ENOSYS;
+	}
 
 	r = DELUKS_check_device_size(ctx, hdr->keyBytes);
 	if (r)
 		return r;
+
+	if(device_size(device, &dev_sectors))
+		return -EIO;
+	dev_sectors >>= SECTOR_SHIFT;
 
 	devfd = device_open(device, O_RDWR);
 	if(-1 == devfd) {
@@ -580,9 +733,6 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 		return -EINVAL;
 	}
 
-	//memcpy(&convHdr, hdr, hdr_size);
-	//memset(&convHdr._padding, 0, sizeof(convHdr._padding));
-
 	// Creating disk header by nuking all non-random and empty elements
 	// DELUKS HEADER RANDOM ON DISK
 	r = crypt_random_get(ctx, (char *)&convHdr, sizeof(convHdr), CRYPT_RND_NORMAL);
@@ -592,6 +742,8 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 		return r;
 	}
 
+	// TODO: Check that we didn't end up looking like an MBR magic number
+
 	// DELUKS HEADER KEPT ON DISK
 	memcpy(&convHdr.mkDigest, hdr->mkDigest, DELUKS_DIGESTSIZE);
 	memcpy(&convHdr.mkDigestSalt, hdr->mkDigestSalt, DELUKS_SALTSIZE);
@@ -600,29 +752,30 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 	}
 
 	// DELUKS ENCRYPTED OPTIONS FOR PAYLOAD MOUNTING
-	// TODO: Add support based on payload (not header) user-provided enc settings. For now, payload settings = header settings.
-	hdr->options.version = hdr->version;
-	hdr->options.payloadTruncatedKeyBytes = hdr->keyBytes;
-	memcpy(&hdr->options.payloadCipherName, &hdr->cipherName, DELUKS_CIPHERNAME_L);
-	memcpy(&hdr->options.payloadCipherMode, &hdr->cipherMode, DELUKS_CIPHERMODE_L);
-	hdr->options.payloadOffset = hdr->payloadOffset;
-	hdr->options.payloadTotalSectors = 0; // TODO: Add support for unallocated space "partition"
-	memcpy(&hdr->options.uuid, &hdr->cipherName, UUID_STRING_L);
-	// hdr->options->bootable set by caller
+	/* Convert every uint16/32/64_t item to network byte order */
+	// TODO: Add support based on payload (not header) user-provided enc settings.
+	memcpy(convHdr.options.magic,hdr->magic,DELUKS_MAGIC_L);
+	convHdr.options.version = htons(hdr->version);
+	convHdr.options.keyBytes = htonl(hdr->keyBytes);
+	memcpy(convHdr.options.cipherName, hdr->cipherName, DELUKS_CIPHERNAME_L);
+	memcpy(convHdr.options.cipherMode, hdr->cipherMode, DELUKS_CIPHERMODE_L);
+	convHdr.options.payloadOffset = htonll(hdr->payloadOffset);
+	// TODO: Add support for unallocated space "partitions"
+	// TODO: Define if offsets of those "partitions" are relative or absolute to the header start sector of the drive
+	convHdr.options.payloadTotalSectors = htonll(dev_sectors-hdr->payloadOffset);
+	memcpy(convHdr.options.uuid, hdr->uuid, UUID_STRING_L);
+	convHdr.options.bootPriority = crypt_get_boot_priority(ctx);
+	//log_dbg("<<DEBUG>> %s:%d UUID:          %.*s\n", __FILE__,__LINE__, UUID_STRING_L, hdr->uuid);
+	
+	for(i = 0; i < DELUKS_NUMKEYS; ++i) {
+		convHdr.options.keyblock[i].active             = htonl(hdr->keyblock[i].active);
+	}
+	
+	/* Encrypt options sub-header */
+	r = DELUKS_encrypt_hdr_opt(&convHdr, &convHdr.options, vk, hdr->cipherName, hdr->cipherMode, ctx);
+	if (r)
+		log_err(ctx, _("Error during encryption of DeLUKS options sub-header. Disk unchanged.\n"));
 
-	/* Convert every uint16/32_t item to network byte order */
-	// TODO: Convert convHdr.* = hton*(hdr->options.*) and encrypt options with the header encryption presets
-	//convHdr.version            = htons(hdr->version);
-	//convHdr.payloadOffset      = htonl(hdr->payloadOffset);
-	//convHdr.keyBytes           = htonl(hdr->keyBytes);
-	//convHdr.mkDigestIterations = htonl(hdr->mkDigestIterations);
-	//for(i = 0; i < DELUKS_NUMKEYS; ++i) {
-	//	convHdr.keyblock[i].active             = htonl(hdr->keyblock[i].active);
-	//	convHdr.keyblock[i].passwordIterations = htonl(hdr->keyblock[i].passwordIterations);
-	//	convHdr.keyblock[i].keyMaterialOffset  = htonl(hdr->keyblock[i].keyMaterialOffset);
-	//	convHdr.keyblock[i].stripes            = htonl(hdr->keyblock[i].stripes);
-	//>>	convHdr.options.keyblock[i].active     = htonl(hdr->keyblock[i].active);
-	//}
 
 	r = write_blockwise(devfd, device_block_size(device), &convHdr, hdr_size) < hdr_size ? -EIO : 0;
 	if (r)
@@ -630,7 +783,7 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 	close(devfd);
 
 	/* Re-read header from disk to be sure that in-memory and on-disk data are the same. */
-	// TODO: Re-implement header write check
+	// Don't do that, we also need to open the key for the DeLUKS header to be complete. And we may decrypt twice header_option.
 	/*
 	if (!r) {
 		r = DELUKS_read_phdr(hdr, 1, 0, ctx);
@@ -718,7 +871,7 @@ int DELUKS_generate_phdr(struct deluks_phdr *header,
 
 	header->keyBytes=vk->keylength;
 
-	header->options.bootPriority=(uint8_t)boot_priority;
+	//header->options.bootPriority=(uint8_t)boot_priority;
 
 	DELUKS_fix_header_compatible(header);
 
@@ -782,7 +935,7 @@ int DELUKS_generate_phdr(struct deluks_phdr *header,
 
         uuid_unparse(partitionUuid, header->uuid);
 
-	log_dbg("Data offset %d, UUID %s, digest iterations %" PRIu32,
+	log_dbg("Data offset %" PRIu64 ", UUID %s, digest iterations %" PRIu32,
 		header->payloadOffset, header->uuid, header->mkDigestIterations);
 
 	return 0;
@@ -804,7 +957,7 @@ int DELUKS_hdr_uuid_set(
 
 	uuid_unparse(partitionUuid, hdr->uuid);
 
-	return DELUKS_write_phdr(hdr, ctx);
+	return DELUKS_write_phdr(hdr, NULL, ctx); // TEMP UNSUPPORTED
 }
 
 int DELUKS_set_key(unsigned int keyIndex,
@@ -877,7 +1030,7 @@ int DELUKS_set_key(unsigned int keyIndex,
 	if (r < 0)
 		goto out;
 
-	log_dbg("Updating key slot %d [0x%04x] area.", keyIndex,
+	log_dbg("Updating key slot %d [%#" PRIx64 "] area.", keyIndex,
 		hdr->keyblock[keyIndex].keyMaterialOffset << 9);
 	/* Encryption via dm */
 	r = DELUKS_encrypt_to_storage(AfKey,
@@ -894,7 +1047,7 @@ int DELUKS_set_key(unsigned int keyIndex,
 	if (r < 0)
 		goto out;
 
-	r = DELUKS_write_phdr(hdr, ctx);
+	r = DELUKS_write_phdr(hdr, vk, ctx);
 	if (r < 0)
 		goto out;
 
@@ -923,7 +1076,7 @@ int DELUKS_verify_volume_key(const struct deluks_phdr *hdr,
 	return 0;
 }
 
-/* Try to open a particular key slot */
+/* Try to open a particular key slot and decipher options */
 static int DELUKS_open_key(unsigned int keyIndex,
 		  const char *password,
 		  size_t passwordLen,
@@ -984,6 +1137,18 @@ static int DELUKS_open_key(unsigned int keyIndex,
 
 	if (!r)
 		log_verbose(ctx, _("Key slot %d unlocked.\n"), keyIndex);
+
+
+	/* Decipher options */
+	// TODO: Reload hdr->options from disk before call, avoid multiple decrypts
+	if (!r) {
+		r = DELUKS_decrypt_hdr_opt(hdr, &hdr->options, vk, crypt_get_options_cipher(ctx), crypt_get_options_cipher_mode(ctx), ctx);
+		if (r == -ENOENT) {
+			log_err(ctx, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
+			r = -EPERM;
+		}
+	}
+
 out:
 	crypt_safe_free(AfKey);
 	crypt_free_volume_key(derived_key);
@@ -1063,7 +1228,7 @@ int DELUKS_del_key(unsigned int keyIndex,
 	memset(&hdr->keyblock[keyIndex].passwordSalt, 0, DELUKS_SALTSIZE);
 	hdr->keyblock[keyIndex].passwordIterations = 0;
 
-	r = DELUKS_write_phdr(hdr, ctx);
+	r = DELUKS_write_phdr(hdr, NULL, ctx); // TEMP UNSUPPORTED
 
 	return r;
 }
