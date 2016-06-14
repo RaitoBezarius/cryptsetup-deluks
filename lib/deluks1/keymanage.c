@@ -156,7 +156,6 @@ static int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
 		  const char *cipher_mode,
 		  struct crypt_device *ctx)
 {
-	int		iv_offset=16;
 	char	iv[DELUKS_HDR_IV_LEN] = {};
 	struct	crypt_cipher *cipher;
 	char	*buf_in  = (char*)&hdr->options;
@@ -171,8 +170,7 @@ static int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
 	if (c)
 		*c = '\0';
 
-	/* Derive options header secret IV from master key */
-	memcpy(iv, &vk->key[iv_offset], DELUKS_HDR_IV_LEN);
+	/* TODO: Increase Master Key size and use a sub-key for header encryption, distinct from payload encryption */
 
 	/* Initialize cipher struct */
 	r = crypt_cipher_init(&cipher, cipher_name, cipher_mode_direct,
@@ -188,7 +186,6 @@ static int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
 		/* Clean options sub-header endianess and strings & copy to real header */
 		memcpy(hdr->magic, hdr_opt_out->magic, DELUKS_MAGIC_L);
 		// TODO: Validate magic
-		//log_dbg("<<DEBUG>> %s:%d magic=%.*s", __FILE__,__LINE__,DELUKS_MAGIC_L,hdr_opt_out->magic);
 		hdr->version	= hdr_opt_out->version	= ntohs(hdr_opt_out->version);
 		hdr->keyBytes	= hdr_opt_out->keyBytes = ntohl(hdr_opt_out->keyBytes);
 		hdr_opt_out->cipherName[DELUKS_CIPHERNAME_L - 1] = '\0';
@@ -223,7 +220,6 @@ static int DELUKS_encrypt_hdr_opt(struct deluks_phdr *hdr,
 		  const char *cipher_mode,
 		  struct crypt_device *ctx)
 {
-	int		iv_offset=16;
 	char	iv[DELUKS_HDR_IV_LEN] = {};
 	struct	crypt_cipher *cipher;
 	char	*buf_in  = (char*)&hdr->options;
@@ -239,9 +235,7 @@ static int DELUKS_encrypt_hdr_opt(struct deluks_phdr *hdr,
 	if (c)
 		*c = '\0';
 
-	/* Derive options header secret IV from master key */
 	/* WARNING: Modifying the encrypted options header requires changing the MK salt to avoid watermaking attacks */
-	memcpy(iv, &vk->key[iv_offset], DELUKS_HDR_IV_LEN);
 
 	/* Initialize cipher struct */
 	r = crypt_cipher_init(&cipher, cipher_name, cipher_mode_direct,
@@ -251,7 +245,6 @@ static int DELUKS_encrypt_hdr_opt(struct deluks_phdr *hdr,
 		/* Decrypt options header */
 		r = crypt_cipher_encrypt(cipher, buf_in, buf_out, sizeof(*hdr_opt_out),
 					 iv, DELUKS_HDR_IV_LEN);
-	for (size_t i = 0; i < 512; ++i) printf("%hhX ", buf_out[i]); printf("\n");
 		crypt_cipher_destroy(cipher);
 
 		/* Convert */

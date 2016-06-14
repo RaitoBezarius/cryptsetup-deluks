@@ -1749,10 +1749,14 @@ static void help(poptContext popt_context,
 		log_std(_("\nDefault compiled-in device cipher parameters:\n"
 			 "\tloop-AES: %s, Key %d bits\n"
 			 "\tplain: %s, Key: %d bits, Password hashing: %s\n"
-			 "\tLUKS1: %s, Key: %d bits, LUKS header hashing: %s, RNG: %s\n"),
+			 "\tLUKS1: %s, Key: %d bits, LUKS header hashing: %s, RNG: %s\n"
+			 "\tDELUKS1: %s, Key: %d bits, DELUKS header hashing: %s, PBKDF2 iterations %d, RNG: %s\n"),
 			 DEFAULT_LOOPAES_CIPHER, DEFAULT_LOOPAES_KEYBITS,
 			 DEFAULT_CIPHER(PLAIN), DEFAULT_PLAIN_KEYBITS, DEFAULT_PLAIN_HASH,
 			 DEFAULT_CIPHER(LUKS1), DEFAULT_LUKS1_KEYBITS, DEFAULT_LUKS1_HASH,
+			 DEFAULT_RNG,
+			 DEFAULT_CIPHER(DELUKS1), DEFAULT_DELUKS1_KEYBITS, DEFAULT_DELUKS1_HASH,
+			 DEFAULT_DELUKS1_ITER_NUM,
 			 DEFAULT_RNG);
 		exit(EXIT_SUCCESS);
 	} else

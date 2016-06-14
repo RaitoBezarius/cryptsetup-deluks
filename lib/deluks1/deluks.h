@@ -82,8 +82,8 @@ struct device_backend;
 // Payload encryption settings (stored in encrypted header) can be different than DELUKS header encryption settings.
 // This structure definition eases compatibility with LUKS codebase
 
-struct deluks_phdr_opt {
-	char		magic[DELUKS_MAGIC_L];          // RANDOM ON DISK
+struct deluks_phdr_opt {          // ENCRYPTED ON DISK
+	char		magic[DELUKS_MAGIC_L];
 	uint16_t	version;
 	uint32_t	keyBytes;
 	char		cipherName[DELUKS_CIPHERNAME_L];
