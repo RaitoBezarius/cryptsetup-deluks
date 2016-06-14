@@ -48,7 +48,7 @@ Initial setup - Create DeLUKS header:
 
     # Run deluksFormat as root or make the drive accessible to the current user:
     # sudo chown ${USER}:disk:disk /dev/sdb
-    cryptsetup -v --debug deluksFormat /dev/sdb
+    cryptsetup deluksFormat /dev/sdb
     cryptsetup -v --debug deluksDump /dev/sdb
     sudo mkdir /media/mount_point
 
