@@ -8,7 +8,63 @@ This repository is a work in progress to specify and implement a Deniable LUKS h
 
 DeLUKS will provide most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption).
 
-Note there is a parrallel project to implement DeLUKS in GRUB Cryptomount: [grub-crypto-deluks](https://github.com/kriswebdev/grub-crypto-deluks).
+Note there is a parrallel project to implement DeLUKS in GRUB Cryptomount: **[grub-crypto-deluks](https://github.com/kriswebdev/grub-crypto-deluks)**.
+
+Alpha now available!
+===
+
+Beware: Header structure may change until Release Candidate: no backward compatibility.
+
+Install
+---
+
+    git clone https://github.com/kriswebdev/cryptsetup-deluks.git
+    cd cryptsetup-deluks
+    sudo apt-get install libgcrypt11-dev libdevmapper-dev libpopt-dev uuid-dev libtool automake autopoint debhelper xsltproc docbook-xsl dpkg-dev
+    ./autogen.sh  --sbindir=/sbin
+    make
+    
+Now, use `./src/cryptsetup` to run cryptsetup or `sudo make install` to install permanently.
+    
+Run
+---
+
+Only full disk encryption is available for now.
+
+NB:
+- Use `./src/cryptsetup` instead of `cryptsetup` if not installed.
+- Consider [wiping your drive](http://unix.stackexchange.com/a/172088/149815) first
+
+
+Help:
+
+    cryptsetup --help
+
+List your drives:
+
+    gnome-disks &
+
+Initial setup - Create DeLUKS header:
+
+    # Run deluksFormat as root or make the drive accessible to the current user:
+    # sudo chown ${USER}:disk:disk /dev/sdb
+    cryptsetup -v --debug deluksFormat /dev/sdb
+    cryptsetup -v --debug deluksDump /dev/sdb
+    sudo mkdir /media/mount_point
+
+Open:
+
+    sudo cryptsetup open /dev/sdb --type deluks deluks_vol
+    sudo mount /dev/mapper/deluks_vol /media/my_device
+
+Initial setup - Format:
+
+    mkfs.ext4 /dev/mapper/deluks_vol
+    
+Close:
+
+    sudo umount /media/my_device
+    sudo cryptsetup close deluks_vol
 
 Expected Features
 ===
@@ -33,9 +89,11 @@ Therefore the Master key / keyslots encryption parameters should use DeLUKS defa
 
 However, default presets hard-coded in GRUB-cryptomount shall regularly evolve to follow security best practices.
 Hence, once GRUB is updated with newer DeLUKS default presets, it shall behave according to this procedure:
-- GRUB-cryptomount will try to decrypt the disks using the latests presets.
-- If GRUB-cryptomount fails to decrypt any disk, it will try with older presets.
-- If GRUB-cryptomount succeds to decrypt any disk with older presets, it shall warn the user to re-create the DeLUKS header with newer presets using cryptsetup. And continue booting.
+1. GRUB-cryptomount will try to decrypt the disks using the latests presets.
+2. If GRUB-cryptomount fails to decrypt any disk, it will try with older presets.
+3. If GRUB-cryptomount succeds to decrypt any disk with older presets, it shall warn the user to re-create the DeLUKS header with newer presets using cryptsetup. And continue booting.
+
+Points 1 and 2 are similar to Truecrypt behavior.
 
 The disk payload encryption settings can be changed as these options are encrypted.
 If GRUB-cryptomount detects the disk payload encryption settings to be obsolete, it shall warn the user to re-create the DeLUKS header and to re-encrypt the drive with newer presets using cryptsetup. And continue booting.
