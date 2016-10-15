@@ -24,7 +24,9 @@ Install
     ./autogen.sh  --sbindir=/sbin
     make
     
-Now, use `./src/cryptsetup` to run cryptsetup or `sudo make install` to install permanently.
+Now, use:
+- `./src/cryptsetup` to run cryptsetup-deluks
+- or `sudo make install` and `sudo ldconfig` to install permanently.
     
 Run
 ---
