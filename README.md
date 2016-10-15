@@ -26,7 +26,7 @@ Install
     
 Now, use:
 - `./src/cryptsetup` to run cryptsetup-deluks
-- or `sudo make install` and `sudo ldconfig` to install permanently.
+- or `sudo make install` and `sudo ldconfig /usr/lib` to install permanently.
     
 Run
 ---
