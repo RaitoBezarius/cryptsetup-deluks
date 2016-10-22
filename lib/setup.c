@@ -2826,6 +2826,38 @@ int crypt_get_verity_info(struct crypt_device *cd,
 	return 0;
 }
 
+int crypt_master_key_dump_file(struct crypt_device *cd,
+	char *vk,
+	size_t *vk_size,
+	const char *opt_dump_master_key_file)
+{	
+	int r = 0, devfd = -1;
+
+	devfd = open(opt_dump_master_key_file, O_CREAT|O_EXCL|O_WRONLY, S_IRUSR);
+	if (devfd == -1) {
+		if (errno == EEXIST)
+			log_err(cd, _("Requested header backup file %s already exists.\n"), opt_dump_master_key_file);
+		else
+			log_err(cd, _("Cannot create header backup file %s.\n"), opt_dump_master_key_file);
+		r = -EINVAL;
+		goto out;
+	}
+	if (write_buffer(devfd, vk, *vk_size) < *vk_size) {
+		log_err(cd, _("Cannot write header backup file %s.\n"), opt_dump_master_key_file);
+		r = -EIO;
+		goto out;
+	}
+
+	log_std(cd, "Master key dumped to "
+		"file %s.\n", opt_dump_master_key_file);
+
+	close(devfd);
+out:
+	if (devfd != -1)
+		close(devfd);
+	return r;
+}
+
 int crypt_get_active_device(struct crypt_device *cd, const char *name,
 			    struct crypt_active_device *cad)
 {

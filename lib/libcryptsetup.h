@@ -993,6 +993,24 @@ int crypt_get_verity_info(struct crypt_device *cd,
 	struct crypt_params_verity *vp);
 /** @} */
 
+
+/**
+ * Dump master key to file
+ *
+ * @param cd crypt device handle
+ * @param vk volume key
+ * @param vk_size volume key size
+ * @param opt_dump_master_key_file target file
+ *
+ * @e 0 on success or negative errno value otherwise.
+ *
+ */
+int crypt_master_key_dump_file(struct crypt_device *cd,
+	char *vk,
+	size_t *vk_size,
+	const char *opt_dump_master_key_file);
+/** @} */
+
 /**
  * @defgroup benchmark Benchmarking
  *

@@ -34,6 +34,7 @@ static const char *opt_keyfiles[MAX_KEYFILES];
 
 static const char *opt_master_key_file = NULL;
 static const char *opt_header_backup_file = NULL;
+static const char *opt_dump_master_key_file = NULL;
 static const char *opt_uuid = NULL;
 static const char *opt_header_device = NULL;
 static const char *opt_type = "luks";
@@ -1497,14 +1498,18 @@ static int action_deluksDump(void)
 	crypt_dump(cd);
 
 	if (opt_dump_master_key) {
-		log_std("MK dump:\t");
+		if (opt_dump_master_key_file == NULL) {
+			log_std("MK dump:\t");
 
-		for(i = 0; i < vk_size; i++) {
-			if (i && !(i % 16))
-				log_std("\n\t\t");
-			log_std("%02hhx ", (char)vk[i]);
+			for(i = 0; i < vk_size; i++) {
+				if (i && !(i % 16))
+					log_std("\n\t\t");
+				log_std("%02hhx ", (char)vk[i]);
+			}
+			log_std("\n");
+		} else {
+			crypt_master_key_dump_file(cd, vk, &vk_size, opt_dump_master_key_file);
 		}
-		log_std("\n");
 	}
 
 	goto out2;
@@ -1815,6 +1820,7 @@ int main(int argc, const char **argv)
 		{ "key-file",          'd',  POPT_ARG_STRING, &opt_key_file,            5, N_("Read the key from a file."), NULL },
 		{ "master-key-file",  '\0',  POPT_ARG_STRING, &opt_master_key_file,     0, N_("Read the volume (master) key from file."), NULL },
 		{ "dump-master-key",  '\0',  POPT_ARG_NONE, &opt_dump_master_key,       0, N_("Dump volume (master) key instead of keyslots info."), NULL },
+		{ "dump-master-key-file", '\0',  POPT_ARG_STRING, &opt_dump_master_key_file, 0, N_("Dump volume (master) key to file."), NULL },
 		{ "key-size",          's',  POPT_ARG_INT, &opt_key_size,               0, N_("The size of the encryption key"), N_("BITS") },
 		{ "keyfile-size",      'l',  POPT_ARG_LONG, &opt_keyfile_size,          0, N_("Limits the read from keyfile"), N_("bytes") },
 		{ "keyfile-offset",   '\0',  POPT_ARG_LONG, &opt_keyfile_offset,        0, N_("Number of bytes to skip in keyfile"), N_("bytes") },
@@ -1987,6 +1993,9 @@ int main(int argc, const char **argv)
 		usage(popt_context, EXIT_FAILURE,
 		      _("Option --allow-discards is allowed only for open operation.\n"),
 		      poptGetInvocationName(popt_context));
+
+	if (opt_dump_master_key_file != NULL)
+		opt_dump_master_key = 1;
 
 	if (opt_key_size &&
 	   strcmp(aname, "luksFormat") &&
