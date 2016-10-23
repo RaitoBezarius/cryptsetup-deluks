@@ -232,4 +232,11 @@ int DELUKS1_activate(struct crypt_device *cd,
 		   struct volume_key *vk,
 		   uint32_t flags);
 
+int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
+		  struct deluks_phdr_opt *hdr_opt_out,
+		  struct volume_key *vk,
+		  const char *cipher_name,
+		  const char *cipher_mode,
+		  struct crypt_device *ctx);
+
 #endif

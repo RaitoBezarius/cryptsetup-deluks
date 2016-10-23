@@ -2004,8 +2004,19 @@ int crypt_activate_by_passphrase(struct crypt_device *cd,
 					   passphrase_size, &cd->u.deluks1.hdr, &vk, cd);
 		if (r >= 0) {
 			keyslot = r;
-			if (name)
-				r = DELUKS1_activate(cd, name, vk, flags);
+			if (name) {
+
+				/* Decipher options */
+				// TODO: Reload hdr->options from disk before call, avoid multiple decrypts
+				r = DELUKS_decrypt_hdr_opt(&cd->u.deluks1.hdr, &cd->u.deluks1.hdr.options, vk, crypt_get_options_cipher(cd), crypt_get_options_cipher_mode(cd), cd);
+				if (r == -ENOENT) {
+					log_err(cd, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
+					r = -EPERM;
+				} else {
+					r = DELUKS1_activate(cd, name, vk, flags);
+				}
+
+			}
 		}
 	} else
 		r = -EINVAL;
@@ -2192,6 +2203,16 @@ int crypt_activate_by_volume_key(struct crypt_device *cd,
 		if (r == -EPERM)
 			log_err(cd, _("Volume key does not match the volume.\n"));
 
+		if (!r && name) {
+			/* Decipher options */
+			// TODO: Reload hdr->options from disk before call, avoid multiple decrypts
+			r = DELUKS_decrypt_hdr_opt(&cd->u.deluks1.hdr, &cd->u.deluks1.hdr.options, vk, crypt_get_options_cipher(cd), crypt_get_options_cipher_mode(cd), cd);
+			if (r == -ENOENT) {
+				log_err(cd, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
+				r = -EPERM;
+			}
+		}
+
 		if (!r && name)
 			r = DELUKS1_activate(cd, name, vk, flags);
 	} else if (isVERITY(cd->type)) {
@@ -2303,6 +2324,15 @@ int crypt_volume_key_get(struct crypt_device *cd,
 	} else if (isDELUKS(cd->type)) {
 		r = DELUKS_open_key_with_hdr(keyslot, passphrase,
 					passphrase_size, &cd->u.deluks1.hdr, &vk, cd);
+		if (!r) {
+			/* Decipher options */
+			// TODO: Reload hdr->options from disk before call, avoid multiple decrypts
+			r = DELUKS_decrypt_hdr_opt(&cd->u.deluks1.hdr, &cd->u.deluks1.hdr.options, vk, crypt_get_options_cipher(cd), crypt_get_options_cipher_mode(cd), cd);
+			if (r == -ENOENT) {
+				log_err(cd, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
+				r = -EPERM;
+			}
+		}
 	} else if (isTCRYPT(cd->type)) {
 		r = TCRYPT_get_volume_key(cd, &cd->u.tcrypt.hdr, &cd->u.tcrypt.params, &vk);
 	} else

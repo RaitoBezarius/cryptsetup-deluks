@@ -149,7 +149,7 @@ static const char *dbg_slot_state(crypt_keyslot_info ki)
 }
 
 /* Decrypt the options sub-header */
-static int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
+int DELUKS_decrypt_hdr_opt(struct deluks_phdr *hdr,
 		  struct deluks_phdr_opt *hdr_opt_out,
 		  struct volume_key *vk,
 		  const char *cipher_name,
@@ -1130,17 +1130,6 @@ static int DELUKS_open_key(unsigned int keyIndex,
 
 	if (!r)
 		log_verbose(ctx, _("Key slot %d unlocked.\n"), keyIndex);
-
-
-	/* Decipher options */
-	// TODO: Reload hdr->options from disk before call, avoid multiple decrypts
-	if (!r) {
-		r = DELUKS_decrypt_hdr_opt(hdr, &hdr->options, vk, crypt_get_options_cipher(ctx), crypt_get_options_cipher_mode(ctx), ctx);
-		if (r == -ENOENT) {
-			log_err(ctx, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
-			r = -EPERM;
-		}
-	}
 
 out:
 	crypt_safe_free(AfKey);
