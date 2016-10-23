@@ -1831,7 +1831,7 @@ int main(int argc, const char **argv)
 		{ "offset",            'o',  POPT_ARG_STRING, &popt_tmp,                2, N_("The start offset in the backend device"), N_("SECTORS") },
 		{ "skip",              'p',  POPT_ARG_STRING, &popt_tmp,                3, N_("How many sectors of the encrypted data to skip at the beginning"), N_("SECTORS") },
 		{ "readonly",          'r',  POPT_ARG_NONE, &opt_readonly,              0, N_("Create a readonly mapping"), NULL },
-		{ "boot-priority",     'b',  POPT_ARG_INT, &opt_boot_priority,          0, N_("Device is bootable by DELUKS (255: boot immediately)"), NULL },
+		{ "boot-priority",     '\0',  POPT_ARG_INT, &opt_boot_priority,          0, N_("Device is bootable by DELUKS (255: boot immediately)"), NULL },
 		{ "iter-time",         'i',  POPT_ARG_INT, &opt_iteration_time,         0, N_("PBKDF2 iteration time for LUKS (in ms)"), N_("msecs") },
 		{ "iterations",        'I',  POPT_ARG_INT, &opt_iteration_num,          0, N_("PBKDF2 number of iterations for DELUKS (in ms)"), N_("msecs") },
 		{ "batch-mode",        'q',  POPT_ARG_NONE, &opt_batch_mode,            0, N_("Do not ask for confirmation"), NULL },
