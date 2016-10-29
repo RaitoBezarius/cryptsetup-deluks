@@ -2,16 +2,16 @@
 
 [![DeLUKS: Deniable Linux Unified Key Setup](https://raw.githubusercontent.com/kriswebdev/grub-crypto-deluks/gh-pages/assets/deluks_logo.png)](https://github.com/kriswebdev/grub-crypto-deluks)
 
-This repository presents an implementation of a plausibly Deniable LUKS header in **cryptsetup**.
+This repository presents an implementation of a plausibly Deniable LUKS header in **`cryptsetup`**.
 
-DeLUKS provides most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption). The DeUKS header is specified to be indistinguishible from random data. This is like Truecrypt header, but with **GRUB support**, **multiple keyslots** and, at term, an **evolutive protection against brute-forcing** (evolutive number of PBKDF2 hash iterations).
+DeLUKS provides most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption). The DeUKS header is specified to be indistinguishible from random data. This is like Truecrypt header, but with **GRUB support**, **multiple keyslots** and *(to be implemented)* an **evolutive protection against brute-forcing**.
 
 For system encryption, there is a parrallel project to implement DeLUKS in GRUB Cryptomount: **[grub-crypto-deluks](https://github.com/kriswebdev/grub-crypto-deluks)**. See the [Wiki: System encryption](https://github.com/kriswebdev/cryptsetup-deluks/wiki/System-encryption) for instructions.
 
 Beta available!
 ===
 
-Cryptsetup-deluks is leaving the Alpha phase and is now on Beta phase.
+`cryptsetup-deluks` is leaving the Alpha stage and is now on Beta stage.
 
 Instructions are written for and tested on **Ubuntu 16** (Xenial Xerus).
 
@@ -112,3 +112,16 @@ DeLUKS Features
 - LUKS **anti-forensic** information splitter: Low risk that the master key could be decrypted with a revoked password (protection against damaged disk blocks storing the revoked keyslot).
 - **Pure dm-crypt**, no TrueCrypt.
 - **No need for Truecrypt-style "hidden partition"**. Instead, you can create a true partition with a fake O.S. GRUB will by default boot on this fake O.S.
+
+Specifications
+===
+
+**TODO**. In the meantime, you can take a look at [deluks.h](https://github.com/kriswebdev/cryptsetup-deluks/blob/master/lib/deluks1/deluks.h).
+
+Basically, only the random-looking salts, master key digest and password-salt-PBKDF2-encrypted key materials are left as-is on disk, like in LUKS header. 
+
+These elements are used to generate and verify the master key, using the install default settings and user-provided password.
+
+Once the master key is recovered, the options header is decrypted to get additional information, including the payload encryption settings or the disk identifier (UUID).
+
+Everything else in the header is random data or encrypted.
