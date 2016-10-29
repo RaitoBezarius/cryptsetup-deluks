@@ -1,0 +1,51 @@
+#!/bin/sh
+
+# Location: /etc/initramfs-tools/scripts/local-top
+
+# === <CONFIG> ===
+
+ENCRYPTED_DEVICE="/dev/sdb"
+DELUKS_VOLUME="deluks_vol"
+DELUKS_ROOT_PARTITION="deluks_vol2"
+
+# === </CONFIG> ===
+# === SCRIPT ===
+
+PREREQ=""
+
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case $1 in
+    prereqs)
+        prereqs
+        exit 0
+    ;;
+esac
+
+# source for log_*_msg() functions and panic()
+. /scripts/functions
+
+
+# Mount DeLUKS volume and scan partitions inside
+
+exit_code=0
+
+if ( /sbin/cryptsetup open "$ENCRYPTED_DEVICE" "$DELUKS_VOLUME" --type=deluks --master-key-file="/root/crypto_keyfile.bin" )
+then
+    /sbin/partprobe
+    if [ -e "/dev/mapper/$DELUKS_ROOT_PARTITION" ]
+    then
+        echo "$DELUKS_VOLUME (${ENCRYPTED_DEVICE}) unlocked."
+        log_success_msg "$DELUKS_VOLUME (${ENCRYPTED_DEVICE}) unlocked"
+        plymouth message --text="/ unlocked"
+        exit 0
+    fi
+fi
+
+plymouth message --text="Could not unlock /"
+sleep 1
+panic "Could not unlock ${DELUKS_VOLUME} (${ENCRYPTED_DEVICE})."
+exit 1
