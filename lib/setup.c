@@ -2012,7 +2012,7 @@ int crypt_activate_by_passphrase(struct crypt_device *cd,
 				if (r == -ENOENT) {
 					log_err(cd, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
 					r = -EPERM;
-				} else {
+				} else if (r >= 0) {
 					r = DELUKS1_activate(cd, name, vk, flags);
 				}
 
@@ -2211,10 +2211,10 @@ int crypt_activate_by_volume_key(struct crypt_device *cd,
 				log_err(cd, _("Key correct but failed to decrypt DeLUKS options header: Wrong header encryption options passed or corrupted header.\n"));
 				r = -EPERM;
 			}
+			if (!r)
+				r = DELUKS1_activate(cd, name, vk, flags);
 		}
 
-		if (!r && name)
-			r = DELUKS1_activate(cd, name, vk, flags);
 	} else if (isVERITY(cd->type)) {
 		/* volume_key == root hash */
 		if (!volume_key || !volume_key_size) {
