@@ -22,7 +22,7 @@ Note: To create a deniable bootable system, check "Setup case" instructions belo
 
     if ! grep "universe" "/etc/apt/sources.list" &>/dev/null; then echo -e "\e[43mEnable universe repository, through software-properties-gtk""\e[0m"; software-properties-gtk &>/dev/null ; else echo "OK"; fi
     sudo apt-get install git libgcrypt11-dev libdevmapper-dev libpopt-dev uuid-dev libtool automake autopoint debhelper xsltproc docbook-xsl dpkg-dev lvm2
-    git clone https://github.com/kriswebdev/cryptsetup-deluks.git
+    git clone --depth=1 https://github.com/kriswebdev/cryptsetup-deluks.git
     cd cryptsetup-deluks
     CRYPTLIBDIR=`dirname $(dpkg -L libcryptsetup4 | grep libcryptsetup.so.4$)`
     echo $CRYPTLIBDIR
