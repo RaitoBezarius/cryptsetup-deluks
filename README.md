@@ -15,6 +15,8 @@ Beta available!
 
 Instructions are written for and tested on **Ubuntu 16** (Xenial Xerus).
 
+`cryptsetup`(`-deluks`) relies on the kernel `dm-crypt`, that is very stable, to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings and that's all. So be confident about the "beta" status.
+
 Install
 ---
 
