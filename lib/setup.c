@@ -1361,6 +1361,37 @@ int crypt_repair(struct crypt_device *cd,
 	return r;
 }
 
+int crypt_upgrade_header(struct crypt_device *cd,
+		 const char *volume_key,
+		 size_t volume_key_size)
+{
+	int r;
+	struct volume_key *vk = NULL;
+
+	log_dbg("Trying to upgrade %s header.",
+		mdata_device_path(cd) ?: "(none)");
+
+	if (!crypt_metadata_device(cd))
+		return -EINVAL;
+
+	if (!isDELUKS(cd->type))
+		return -EINVAL;
+
+	if (volume_key)
+		vk = crypt_alloc_volume_key(volume_key_size, volume_key);
+	else if (cd->volume_key)
+		vk = crypt_alloc_volume_key(cd->volume_key->keylength, cd->volume_key->key);
+
+	if (!vk)
+		return -ENOMEM;
+
+	r = DELUKS_write_phdr(&cd->u.deluks1.hdr, vk, cd);
+
+	crypt_free_volume_key(vk);
+
+	return r;
+}
+
 int crypt_resize(struct crypt_device *cd, const char *name, uint64_t new_size)
 {
 	struct crypt_dm_active_device dmd;

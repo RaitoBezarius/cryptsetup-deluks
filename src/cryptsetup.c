@@ -678,6 +678,85 @@ out:
 	return r;
 }
 
+static int action_deluksUpgrade(void)
+{
+	struct crypt_device *cd = NULL;
+	char *hash_spec;
+	char cipher[MAX_CIPHER_LEN], cipher_mode[MAX_CIPHER_LEN];
+	char *vk = NULL, *password = NULL;
+	size_t passwordLen = 0;
+	size_t vk_size;
+	int r;
+
+  // Decrypt options header
+
+	if ((r = crypt_init(&cd, uuid_or_device_header(NULL))))
+		goto out;
+
+	if (opt_iteration_num)
+		crypt_set_iteration_num(cd, opt_iteration_num);
+	else
+		crypt_set_iteration_num(cd, DEFAULT_DELUKS1_ITER_NUM);
+
+	r = crypt_parse_name_and_mode(opt_cipher ?: DEFAULT_CIPHER(DELUKS1),
+				      cipher, NULL, cipher_mode);
+
+	if (r < 0) {
+		log_err(_("No known cipher specification pattern detected.\n"));
+		goto out;
+	}
+
+	crypt_set_options_cipher(cd, cipher);
+
+	crypt_set_options_cipher_mode(cd, cipher_mode);
+
+	crypt_set_key_size(cd, opt_key_size ? opt_key_size / 8 : DEFAULT_DELUKS1_KEYBITS / 8);
+
+	hash_spec = opt_hash?strdup(opt_hash):strdup(DEFAULT_DELUKS1_HASH);
+	crypt_set_hash_spec(cd, hash_spec);
+
+	if ((r = crypt_load(cd, CRYPT_DELUKS1, NULL)))
+		goto out;
+
+	vk_size = crypt_get_volume_key_size(cd);
+	vk = crypt_safe_alloc(vk_size);
+	if (!vk)
+		return -ENOMEM;
+
+	r = tools_get_key(_("Enter passphrase: "), &password, &passwordLen,
+			  opt_keyfile_offset, opt_keyfile_size, opt_key_file,
+			  opt_timeout, 0, 0, cd);
+	if (r < 0)
+		goto out2;
+
+	r = crypt_volume_key_get(cd, CRYPT_ANY_SLOT, vk, &vk_size,
+				 password, passwordLen);
+	check_signal(&r);
+	if (r < 0)
+		goto out2;
+
+  // Upgrade/regenerate full header
+  // Currently this does not intend to change the on-disk key salt, key data, master key salt, master key digest
+
+		r = yesDialog(_("Really try to upgrade DeLUKS device header?"),
+			       NULL) ? 0 : -EINVAL;
+		if (r == 0)
+			r = crypt_upgrade_header(cd, vk, vk_size);
+
+		goto out2;
+
+out:
+	crypt_free(cd);
+	return r;
+
+out2:
+	crypt_safe_free(password);
+	crypt_safe_free(vk);
+	crypt_free(cd);
+	return r;
+
+}
+
 static int action_luksFormat(void)
 {
 	int r = -EINVAL, keysize;
@@ -813,7 +892,7 @@ static int action_deluksFormat(void)
 	// TODO: Refuse real partitions
 	// TODO: Add support for unallocated space "partitions" aligned at 1MiB
 
-	crypt_set_boot_priority(cd, opt_boot_priority);	
+	crypt_set_boot_priority(cd, opt_boot_priority);
 
 	keysize = (opt_key_size ?: DEFAULT_DELUKS1_KEYBITS) / 8;
 
@@ -1693,7 +1772,8 @@ static struct action_type {
 	{ "resize",       action_resize,       1, 1, N_("<name>"), N_("resize active device") },
 	{ "status",       action_status,       1, 0, N_("<name>"), N_("show device status") },
 	{ "benchmark",    action_benchmark,    0, 0, N_("<name>"), N_("benchmark cipher") },
-	{ "repair",       action_luksRepair,   1, 1, N_("<device>"), N_("try to repair on-disk metadata") },
+	{ "repair",       action_luksRepair,   1, 1, N_("<device>"), N_("try to repair on-disk LUKS metadata") },
+	{ "deluksUpgrade",action_deluksUpgrade,1, 1, N_("<device>"), N_("upgrade on-disk DeLUKS metadata") },
 	{ "erase",        action_luksErase ,   1, 1, N_("<device>"), N_("erase all keyslots (remove encryption key)") },
 	{ "deluksFormat", action_deluksFormat, 1, 1, N_("<device> [<new key file>]"), N_("formats a DeLUKS device") },
 	{ "luksFormat",   action_luksFormat,   1, 1, N_("<device> [<new key file>]"), N_("formats a LUKS device") },

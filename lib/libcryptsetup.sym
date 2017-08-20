@@ -26,6 +26,7 @@ CRYPTSETUP_1.0 {
 		crypt_format;
 		crypt_load;
 		crypt_repair;
+		crypt_upgrade_header;
 		crypt_resize;
 		crypt_suspend;
 		crypt_resume_by_passphrase;

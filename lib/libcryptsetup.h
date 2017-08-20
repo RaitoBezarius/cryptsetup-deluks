@@ -487,6 +487,20 @@ int crypt_repair(struct crypt_device *cd,
 		 void *params);
 
 /**
+* Upgrade crypt header on-disk
+*
+* @param cd crypt device handle
+* @param volume_key provided volume key
+* @param volume_key_size size of volume_key
+*
+* @returns 0 on success or negative errno value otherwise.
+*
+*/
+int crypt_upgrade_header(struct crypt_device *cd,
+		 const char *volume_key,
+		 size_t volume_key_size);
+
+/**
  * Resize crypt device.
  *
  * @param cd - crypt device handle
