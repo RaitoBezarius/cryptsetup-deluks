@@ -741,7 +741,9 @@ int DELUKS_write_phdr(struct deluks_phdr *hdr,
 	memcpy(&convHdr.mkDigest, hdr->mkDigest, DELUKS_DIGESTSIZE);
 	memcpy(&convHdr.mkDigestSalt, hdr->mkDigestSalt, DELUKS_SALTSIZE);
 	for(i = 0; i < DELUKS_NUMKEYS; ++i) {
-		memcpy(&convHdr.keyblock[i].passwordSalt, hdr->keyblock[i].passwordSalt, DELUKS_SALTSIZE);
+		if(hdr->keyblock[i].active != DELUKS_KEY_DISABLED) {
+			memcpy(&convHdr.keyblock[i].passwordSalt, hdr->keyblock[i].passwordSalt, DELUKS_SALTSIZE);
+		}
 	}
 
 	// DELUKS ENCRYPTED OPTIONS FOR PAYLOAD MOUNTING

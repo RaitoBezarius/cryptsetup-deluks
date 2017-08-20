@@ -1070,7 +1070,7 @@ static int _crypt_format_deluks1(struct crypt_device *cd,
 		return r;
 
 	/* Wipe first 8 sectors - fs magic numbers etc. */
-	r = crypt_wipe(crypt_metadata_device(cd), 0, 8 * SECTOR_SIZE, CRYPT_WIPE_ZERO, 1);
+	r = crypt_wipe(crypt_metadata_device(cd), 0, 8 * SECTOR_SIZE, CRYPT_WIPE_RANDOM, 1);
 	if(r < 0) {
 		if (r == -EBUSY)
 			log_err(cd, _("Cannot format device %s which is still in use.\n"),
