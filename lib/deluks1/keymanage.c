@@ -428,7 +428,6 @@ out:
 static int _keyslot_repair(struct deluks_phdr *phdr, struct crypt_device *ctx)
 {
 	struct deluks_phdr temp_phdr;
-	const unsigned char *sector = (const unsigned char*)phdr;
 	struct volume_key *vk;
 	uint64_t PBKDF2_per_sec = 1;
 	int i, bad, r, need_write = 0;
@@ -482,12 +481,6 @@ static int _keyslot_repair(struct deluks_phdr *phdr, struct crypt_device *ctx)
 				(unsigned)phdr->keyblock[i].stripes,
 				(unsigned)temp_phdr.keyblock[i].stripes);
 			phdr->keyblock[i].stripes = temp_phdr.keyblock[i].stripes;
-			bad = 1;
-		}
-
-		/* Known case - MSDOS partition table signature */
-		if (i == 6 && sector[0x1fe] == 0x55 && sector[0x1ff] == 0xaa) {
-			log_err(ctx, _("Keyslot %i: bogus partition signature.\n"), i);
 			bad = 1;
 		}
 
