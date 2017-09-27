@@ -11,13 +11,13 @@ For system encryption, there is a parrallel project to implement DeLUKS in GRUB 
 Beta 0.2 available!
 ===
 
-`cryptsetup-deluks` is leaving the Alpha stage and is now on Beta stage, version 0.2.
+`cryptsetup-deluks` is leaving the Alpha stage and is now in Beta stage, version 0.2.
 
 Instructions are written for and tested on **Ubuntu 16** (Xenial Xerus).
 
-`cryptsetup`(`-deluks`) relies on the kernel `dm-crypt`, that is very stable, to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings and that's all. So be confident about the "beta" status, at least in terms of encryption.
+`cryptsetup`(`-deluks`) relies on the kernel `dm-crypt` (which is very stable) to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings, and that's all. You can be confident about the "beta" status, at least in terms of encryption.
 
-To upgrade to Beta 0.2 that contains a major header deniability fix, use the command: `cryptsetup deluksUpgrade <disk>`. You can backup your header with the command `dd if=<deluks_disk> of=<backup_file> bs=512 count=2008` but this will look suspicious if you don't wipe your backup after the upgrade.
+To upgrade to Beta 0.2 (which contains a major header deniability fix), use the command: `cryptsetup deluksUpgrade <disk>`. You can backup your header with the command `dd if=<deluks_disk> of=<backup_file> bs=512 count=2008`, however, this will look suspicious if you don't wipe your backup after the upgrade.
 
 Install
 ---
