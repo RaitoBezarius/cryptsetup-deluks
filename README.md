@@ -84,7 +84,7 @@ Setup case: Non-system encryption
 
 > This is a simple setup with only one filesystem inside the encrypted volume (no partition table, no LVM). It is used to store data. Please keep in mind that your system keeps logs and tracks of what you do, so if deniability is really your objective, you should consider the system encryption setup case.
 
-First, install cryptsetup, create and open the DeLUKS volume (see above instructions).
+First, install cryptsetup, then create and open the DeLUKS volume (see above instructions).
 
 Create & mount the filesystem:
 
@@ -103,14 +103,14 @@ See the [Wiki: System encryption](https://github.com/kriswebdev/cryptsetup-deluk
 
 DeLUKS Features
 ===
-- **QUICK BOOT!** At GRUB menu, press `c` to get into GRUB shell, then `cryptomount -x /` and your password. That's all!
+- **QUICK BOOT!** At GRUB menu, press `c` to get into GRUB shell, then `cryptomount -x /` followed by your password. That's all!
 - Plausibly **DENIABLE!**
   - DeLUKS header and encrypted payload are **indistinguishable from random data**. *"Why is there random data on your unallocated disk space? - I wiped my disk"*
   - Bootloader is nothing more than **GRUB**. If the code is integrated upstream, the setup will even be indistinguishable from mainstream GRUB *"Why do you have a bootloader with deniable decryption feature? - Do I? It's the default GRUB."*
-  - **No bootloader password menu**. Base of deny, YOU command the bootloader to ask you for a password, not the other way round. *"Look, I just installed this O.S. on my wiped drive, it's GRUB's only menu choice. Where would I hide something?"*
+  - **No bootloader password menu**. This is the basis of deniability - YOU command the bootloader to ask you for a password, not the other way round. *"Look, I just installed this O.S. on my wiped drive, it's GRUB's only menu choice. Where would I hide something?"*
   - DeLUKS finds encrypted disks by **scanning** & trying to mount all unallocated disk space > 2MiB.
-  - **No poorly secured USB key** needed! But use one if you really want to. *"We didn't find any (1) remote header (2) unencrypted keyfile (3) loosely brute-forcable plain dm-crypt keyfile (choose one) on your USB key."*
-- LUKS **multiple keyslots**: You can decrypt a disk with any one of 8 passwords. You can change and revok the passwords.
+  - **No poorly secured USB key** needed! But you may use one if you really want to. *"We didn't find any (1) remote header (2) unencrypted keyfile (3) loosely brute-forcable plain dm-crypt keyfile (choose one) on your USB key."*
+- LUKS **multiple keyslots**: You can decrypt a disk with any one of 8 passwords. You can change and revoke the passwords.
 - LUKS protection **against rainbow table** attacks: Master key is encrypted with a salt.
 - LUKS **slow brute-forcing**: User password is encrypted with several hash iterations and a salt.
 - LUKS **anti-forensic** information splitter: Low risk that the master key could be decrypted with a revoked password (protection against damaged disk blocks storing the revoked keyslot).
