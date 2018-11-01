@@ -13,7 +13,7 @@ Beta 0.2 available!
 
 `cryptsetup-deluks` is leaving the Alpha stage and is now in Beta stage, version 0.2.
 
-Instructions are written for and tested on **Ubuntu 16** (Xenial Xerus).
+Instructions are written for and tested on **Ubuntu 16.04** and **18.10**.
 
 `cryptsetup`(`-deluks`) relies on the kernel `dm-crypt` (which is very stable) to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings, and that's all. You can be confident about the "beta" status, at least in terms of encryption.
 
@@ -30,6 +30,7 @@ Note: To create a deniable bootable system, check "Setup case" instructions belo
     cd cryptsetup-deluks
     CRYPTLIBDIR=`dirname $(dpkg -L libcryptsetup4 | grep libcryptsetup.so.4$)`
     echo $CRYPTLIBDIR
+    sudo apt-mark hold *cryptsetup*
     ./autogen.sh --prefix=/usr --sbindir=/sbin --libdir="$CRYPTLIBDIR"
     make
     sudo make install
@@ -100,6 +101,15 @@ Setup case: System encryption
 ---
 
 See the [Wiki: System encryption](https://github.com/kriswebdev/cryptsetup-deluks/wiki/System-encryption).
+
+
+Uninstall
+---
+
+To uninstall and return to your the distribution `cryptsetup` packages:
+
+    sudo apt-mark unhold *cryptsetup*
+    sudo apt-get install --reinstall --only-upgrade *cryptsetup* 
 
 DeLUKS Features
 ===
