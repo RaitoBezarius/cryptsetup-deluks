@@ -28,7 +28,7 @@ Note: To create a deniable bootable system, check "Setup case" instructions belo
     sudo apt-get install git libgcrypt11-dev libdevmapper-dev libpopt-dev uuid-dev libtool automake autopoint debhelper xsltproc docbook-xsl dpkg-dev lvm2
     git clone --depth=1 https://github.com/kriswebdev/cryptsetup-deluks.git
     cd cryptsetup-deluks
-    CRYPTLIBDIR=`dirname $(dpkg -L libcryptsetup4 | grep libcryptsetup.so.4$)`
+    CRYPTLIBDIR=`dirname $(find /lib -name libcryptsetup.so)`
     echo $CRYPTLIBDIR
     sudo apt-mark hold *cryptsetup*
     ./autogen.sh --prefix=/usr --sbindir=/sbin --libdir="$CRYPTLIBDIR"
