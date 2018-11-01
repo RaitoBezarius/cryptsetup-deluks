@@ -2,20 +2,22 @@
 
 [![DeLUKS: Deniable Linux Unified Key Setup](https://raw.githubusercontent.com/kriswebdev/grub-crypto-deluks/gh-pages/assets/deluks_logo.png)](https://github.com/kriswebdev/grub-crypto-deluks)
 
-This repository presents an implementation of a plausibly Deniable LUKS header in **`cryptsetup`**.
+This repository presents an implementation of a plausibly deniable LUKS header in **`cryptsetup`**.
 
-DeLUKS provides most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption). The DeLUKS header is specified to be indistinguishible from random data. This is like Truecrypt header, but with **GRUB support**, **multiple keyslots** and *(to be implemented)* an **evolutive protection against brute-forcing**.
+DeLUKS provides most benefits of LUKS and of plausibly [deniable encryption](https://en.wikipedia.org/wiki/Deniable_encryption). The DeLUKS header is designed to be indistinguishible from random data. This is like Truecrypt header, but with **GRUB support**, **multiple keyslots** and *(to be implemented)* an **evolutive protection against brute-forcing**.
 
 For system encryption, there is a parrallel project to implement DeLUKS in GRUB Cryptomount: **[grub-crypto-deluks](https://github.com/kriswebdev/grub-crypto-deluks)**. See the [Wiki: System encryption](https://github.com/kriswebdev/cryptsetup-deluks/wiki/System-encryption) for instructions.
 
-Beta available!
+Beta 0.2 available!
 ===
 
-`cryptsetup-deluks` is leaving the Alpha stage and is now on Beta stage.
+`cryptsetup-deluks` is leaving the Alpha stage and is now in Beta stage, version 0.2.
 
 Instructions are written for and tested on **Ubuntu 16** (Xenial Xerus).
 
-`cryptsetup`(`-deluks`) relies on the kernel `dm-crypt`, that is very stable, to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings and that's all. So be confident about the "beta" status.
+`cryptsetup`(`-deluks`) relies on the kernel `dm-crypt` (which is very stable) to manage the payload encryption/decryption. Indeed, `cryptsetup`(`-deluks`) is just a tool focused on encryption header management. It tells `dm-crypt` where the payload data is on the disk, gives it the key and encryption settings, and that's all. You can be confident about the "beta" status, at least in terms of encryption.
+
+To upgrade to Beta 0.2 (which contains a major header deniability fix), use the command: `cryptsetup deluksUpgrade <disk>`. You can backup your header with the command `dd if=<deluks_disk> of=<backup_file> bs=512 count=2008`, however, this will look suspicious if you don't wipe your backup after the upgrade.
 
 Install
 ---
@@ -82,7 +84,7 @@ Setup case: Non-system encryption
 
 > This is a simple setup with only one filesystem inside the encrypted volume (no partition table, no LVM). It is used to store data. Please keep in mind that your system keeps logs and tracks of what you do, so if deniability is really your objective, you should consider the system encryption setup case.
 
-First, install cryptsetup, create and open the DeLUKS volume (see above instructions).
+First, install cryptsetup, then create and open the DeLUKS volume (see above instructions).
 
 Create & mount the filesystem:
 
@@ -101,14 +103,14 @@ See the [Wiki: System encryption](https://github.com/kriswebdev/cryptsetup-deluk
 
 DeLUKS Features
 ===
-- **QUICK BOOT!** At GRUB menu, press `c` to get into GRUB shell, then `cryptomount -x /` and your password. That's all!
+- **QUICK BOOT!** At GRUB menu, press `c` to get into GRUB shell, then `cryptomount -x /` followed by your password. That's all!
 - Plausibly **DENIABLE!**
   - DeLUKS header and encrypted payload are **indistinguishable from random data**. *"Why is there random data on your unallocated disk space? - I wiped my disk"*
   - Bootloader is nothing more than **GRUB**. If the code is integrated upstream, the setup will even be indistinguishable from mainstream GRUB *"Why do you have a bootloader with deniable decryption feature? - Do I? It's the default GRUB."*
-  - **No bootloader password menu**. Base of deny, YOU command the bootloader to ask you for a password, not the other way round. *"Look, I just installed this O.S. on my wiped drive, it's GRUB's only menu choice. Where would I hide something?"*
+  - **No bootloader password menu**. This is the basis of deniability - YOU command the bootloader to ask you for a password, not the other way round. *"Look, I just installed this O.S. on my wiped drive, it's GRUB's only menu choice. Where would I hide something?"*
   - DeLUKS finds encrypted disks by **scanning** & trying to mount all unallocated disk space > 2MiB.
-  - **No poorly secured USB key** needed! But use one if you really want to. *"We didn't find any (1) remote header (2) unencrypted keyfile (3) loosely brute-forcable plain dm-crypt keyfile (choose one) on your USB key."*
-- LUKS **multiple keyslots**: You can decrypt a disk with any one of 8 passwords. You can change and revok the passwords.
+  - **No poorly secured USB key** needed! But you may use one if you really want to. *"We didn't find any (1) remote header (2) unencrypted keyfile (3) loosely brute-forcable plain dm-crypt keyfile (choose one) on your USB key."*
+- LUKS **multiple keyslots**: You can decrypt a disk with any one of 8 passwords. You can change and revoke the passwords.
 - LUKS protection **against rainbow table** attacks: Master key is encrypted with a salt.
 - LUKS **slow brute-forcing**: User password is encrypted with several hash iterations and a salt.
 - LUKS **anti-forensic** information splitter: Low risk that the master key could be decrypted with a revoked password (protection against damaged disk blocks storing the revoked keyslot).
