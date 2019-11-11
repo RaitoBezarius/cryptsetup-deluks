@@ -43,7 +43,7 @@ Replace `libgcrypt11-dev` by `libgcrypt20-dev` in the following command if you g
 Install : Non-system encryption
 ---
 
-This install method avoids messing with your distribution `cryptsetup*` packages; however, it can't be used for system encrypton.
+This install method avoids messing with your distribution `cryptsetup*` packages; however, it can't be used for system encryption.
 
 Replace `libgcrypt11-dev` by `libgcrypt20-dev` in the following command if you get an non-existing package error.
 
